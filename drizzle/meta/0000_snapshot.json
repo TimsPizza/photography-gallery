@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "53f786bc-c4af-4965-be93-c59e08b07c11",
+  "id": "7a364230-4e9c-4910-b5fd-23864f90842c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "photo_color_fingerprints": {
