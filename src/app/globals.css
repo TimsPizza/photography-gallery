@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f2e8;
+  --foreground: #1d1b18;
+  --panel: rgb(255 252 244 / 68%);
+  --panel-border: rgb(255 255 255 / 72%);
+  --muted: #686258;
+  --accent: #a6752a;
 }
 
 @theme inline {
@@ -22,5 +26,180 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+main {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 10%, rgb(255 229 165 / 48%), transparent 28rem),
+    linear-gradient(135deg, #fbf7ed 0%, #e7e4dc 52%, #d7d4cc 100%);
+}
+
+.upload-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+  gap: clamp(2rem, 6vw, 6rem);
+  min-height: 100vh;
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+  align-items: center;
+  padding: clamp(2rem, 7vw, 6rem) 0;
+}
+
+.upload-copy {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.upload-copy h1 {
+  max-width: 11ch;
+  font-size: clamp(3rem, 8vw, 6.6rem);
+  line-height: 0.94;
+  font-weight: 650;
+}
+
+.upload-copy p:not(.eyebrow) {
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.upload-panel {
+  display: grid;
+  gap: 1.1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgb(68 54 29 / 18%);
+  backdrop-filter: blur(22px);
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.upload-button {
+  min-height: 3.2rem;
+  border: 0;
+  border-radius: 8px;
+  background: #211f1b;
+  color: #fffaf0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease;
+}
+
+.upload-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.upload-button:disabled {
+  cursor: progress;
+  opacity: 0.68;
+}
+
+.upload-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+code {
+  border-radius: 4px;
+  background: rgb(255 255 255 / 58%);
+  padding: 0.12rem 0.32rem;
+  color: #443215;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.86em;
+}
+
+.upload-list {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 9rem;
+}
+
+.empty-state {
+  display: grid;
+  min-height: 9rem;
+  place-items: center;
+  border: 1px dashed rgb(80 72 58 / 24%);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.upload-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  min-height: 5rem;
+  padding: 1rem;
+  border: 1px solid rgb(255 255 255 / 62%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 44%);
+}
+
+.upload-item h2 {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.upload-item p {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.upload-item span {
+  min-width: 5.6rem;
+  border-radius: 999px;
+  padding: 0.36rem 0.65rem;
+  background: rgb(33 31 27 / 8%);
+  color: #3a342a;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.upload-item[data-status="stored"] span {
+  background: rgb(63 128 82 / 16%);
+  color: #285437;
+}
+
+.upload-item[data-status="failed"] span {
+  background: rgb(164 52 48 / 15%);
+  color: #89312d;
+}
+
+@media (max-width: 780px) {
+  .upload-shell {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .upload-copy h1 {
+    max-width: 12ch;
+    font-size: clamp(2.8rem, 18vw, 5rem);
+  }
 }

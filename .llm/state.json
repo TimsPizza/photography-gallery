@@ -1,0 +1,12 @@
+{
+  "completed_task_counter": 5,
+  "last_snapshot_commit": "58d41dfa1241295776cf8a42c9524e561ec31a09",
+  "last_impl_index": 1,
+  "last_impl_time": "2026-06-01T00:54:19Z",
+  "pending_tasks": [],
+  "done_tasks_since_last_impl": [
+    "Add Cloudflare Worker upload gateway",
+    "Rename misspelled upload worker to gallery upload",
+    "Wire Next upload flow to Cloudflare Worker tickets"
+  ]
+}
