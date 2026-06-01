@@ -193,3 +193,112 @@ function mustGetEnv(name: string) {
   }
   return value;
 }
+
+export async function getPhotoById(id: string): Promise<StoredPhotoMetadata | null> {
+  const response = await queryD1<{
+    id: string;
+    original_file_name: string;
+    final_file_name: string;
+    file_id: string;
+    file_url: string;
+    capture_time: string | null;
+    upload_time: string;
+    width: number;
+    height: number;
+    aspect_ratio: number;
+    orientation: "landscape" | "portrait" | "square";
+    camera: string | null;
+    lens: string | null;
+    iso: number | null;
+    aperture: string | null;
+    shutter: string | null;
+    focal_length: string | null;
+    manual_tags_json: string;
+    auto_mood_tags_json: string;
+    fingerprint_version: number;
+    fingerprint_json: string;
+  }>({
+    sql: `
+      SELECT
+        photos.*,
+        photo_color_fingerprints.version AS fingerprint_version,
+        photo_color_fingerprints.fingerprint_json
+      FROM photos
+      LEFT JOIN photo_color_fingerprints
+        ON photo_color_fingerprints.photo_id = photos.id
+      WHERE photos.id = ?
+    `,
+    params: [id],
+  });
+
+  const row = response.result?.[0]?.results?.[0];
+  if (!row) return null;
+
+  return storedPhotoMetadataSchema.parse({
+    id: row.id,
+    originalFileName: row.original_file_name,
+    finalFileName: row.final_file_name,
+    fileId: row.file_id,
+    fileUrl: row.file_url,
+    captureTime: row.capture_time,
+    uploadTime: row.upload_time,
+    width: row.width,
+    height: row.height,
+    aspectRatio: row.aspect_ratio,
+    orientation: row.orientation,
+    camera: row.camera ?? undefined,
+    lens: row.lens ?? undefined,
+    iso: row.iso ?? undefined,
+    aperture: row.aperture ?? undefined,
+    shutter: row.shutter ?? undefined,
+    focalLength: row.focal_length ?? undefined,
+    colorFingerprintVersion: row.fingerprint_version,
+    colorFingerprint: JSON.parse(row.fingerprint_json),
+    manualTags: JSON.parse(row.manual_tags_json),
+    autoMoodTags: JSON.parse(row.auto_mood_tags_json),
+  });
+}
+
+export async function deletePhotoFully(id: string) {
+  const photo = await getPhotoById(id);
+  if (!photo) return;
+
+  // 1. Delete from imgbed
+  const imgbedBaseUrl = mustGetEnv("IMGBED_BASE_URL");
+  const imgbedToken = mustGetEnv("IMGBED_TOKEN");
+
+  // imgbed DELETE endpoint: /api/manage/delete/{fileId}
+  const segments = photo.fileId.split("/");
+  const encodedFileId = segments.map(encodeURIComponent).join("/");
+  const deleteUrl = `${imgbedBaseUrl}/api/manage/delete/${encodedFileId}`;
+
+  const imgbedResponse = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${imgbedToken}`,
+    },
+  });
+
+  if (!imgbedResponse.ok) {
+    const errorText = await imgbedResponse.text();
+    console.error(`Failed to delete from imgbed: ${imgbedResponse.status} ${errorText}`);
+  }
+
+  // 2. Delete from D1
+  await deletePhotoMetadata(id);
+}
+
+export async function deletePhotoMetadata(id: string) {
+  await queryD1({
+    batch: [
+      {
+        sql: `DELETE FROM photo_color_fingerprints WHERE photo_id = ?`,
+        params: [id],
+      },
+      {
+        sql: `DELETE FROM photos WHERE id = ?`,
+        params: [id],
+      },
+    ],
+  });
+}

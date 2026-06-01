@@ -21,7 +21,9 @@ const JPEG_SOI = 0xffd8;
 const EXIF_HEADER = "Exif\0\0";
 const ANALYSIS_SIZE = 192;
 
-export async function analyzePhotoFile(file: File): Promise<PhotoUploadMetadata> {
+export async function analyzePhotoFile(
+  file: File,
+): Promise<PhotoUploadMetadata> {
   const [image, exif] = await Promise.all([
     createImageBitmap(file),
     readExifMetadata(file),
@@ -40,9 +42,11 @@ export async function analyzePhotoFile(file: File): Promise<PhotoUploadMetadata>
         ? "landscape"
         : "portrait";
 
+  const originalFileName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+
   return {
     id: crypto.randomUUID(),
-    originalFileName: file.name,
+    originalFileName,
     captureTime: exif.captureTime,
     uploadTime: new Date().toISOString(),
     width,
@@ -62,8 +66,52 @@ export async function analyzePhotoFile(file: File): Promise<PhotoUploadMetadata>
   };
 }
 
+export async function encodeToWebP(
+  file: File,
+  newNameOverride?: string,
+): Promise<File> {
+  const image = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+
+  const MAX_DIMENSION = 1080;
+  let scale = 1;
+  if (image.width > MAX_DIMENSION || image.height > MAX_DIMENSION) {
+    scale = Math.min(MAX_DIMENSION / image.width, MAX_DIMENSION / image.height);
+  }
+
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas context unavailable for WebP encoding.");
+  }
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  image.close();
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Failed to encode WebP."));
+          return;
+        }
+        const newName =
+          newNameOverride || file.name.replace(/\.[^/.]+$/, "") + ".webp";
+        resolve(new File([blob], newName, { type: "image/webp" }));
+      },
+      "image/webp",
+      0.75,
+    );
+  });
+}
+
 function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
-  const scale = Math.min(1, ANALYSIS_SIZE / Math.max(image.width, image.height));
+  const scale = Math.min(
+    1,
+    ANALYSIS_SIZE / Math.max(image.width, image.height),
+  );
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
   const canvas =
@@ -87,7 +135,10 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
 
   context.drawImage(image, 0, 0, width, height);
   const pixels = context.getImageData(0, 0, width, height).data;
-  const buckets = new Map<string, { count: number; r: number; g: number; b: number }>();
+  const buckets = new Map<
+    string,
+    { count: number; r: number; g: number; b: number }
+  >();
 
   let rTotal = 0;
   let gTotal = 0;
@@ -136,14 +187,20 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
   const saturation = saturationTotal / count;
   const warmth = warmthTotal / count;
   const variance =
-    brightnessValues.reduce((sum, value) => sum + (value - brightness) ** 2, 0) /
-    brightnessValues.length;
+    brightnessValues.reduce(
+      (sum, value) => sum + (value - brightness) ** 2,
+      0,
+    ) / brightnessValues.length;
 
   const dominantColors = Array.from(buckets.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
     .map((bucket, index) => ({
-      color: rgbToHex(bucket.r / bucket.count, bucket.g / bucket.count, bucket.b / bucket.count),
+      color: rgbToHex(
+        bucket.r / bucket.count,
+        bucket.g / bucket.count,
+        bucket.b / bucket.count,
+      ),
       percentage: Number((bucket.count / count).toFixed(4)),
       role: dominantColorRole(index),
     }));
@@ -176,7 +233,10 @@ async function readExifMetadata(file: File): Promise<ExifMetadata> {
 
     const marker = view.getUint8(offset + 1);
     const size = view.getUint16(offset + 2, false);
-    if (marker === 0xe1 && readAscii(view, offset + 4, EXIF_HEADER.length) === EXIF_HEADER) {
+    if (
+      marker === 0xe1 &&
+      readAscii(view, offset + 4, EXIF_HEADER.length) === EXIF_HEADER
+    ) {
       return parseExifTiff(view, offset + 10);
     }
 
@@ -189,9 +249,16 @@ async function readExifMetadata(file: File): Promise<ExifMetadata> {
 function parseExifTiff(view: DataView, tiffOffset: number): ExifMetadata {
   const littleEndian = readAscii(view, tiffOffset, 2) === "II";
   const firstIfdOffset = readUint32(view, tiffOffset + 4, littleEndian);
-  const root = readIfd(view, tiffOffset, tiffOffset + firstIfdOffset, littleEndian);
+  const root = readIfd(
+    view,
+    tiffOffset,
+    tiffOffset + firstIfdOffset,
+    littleEndian,
+  );
   const exifOffset = readNumericTag(root, 0x8769);
-  const exif = exifOffset ? readIfd(view, tiffOffset, tiffOffset + exifOffset, littleEndian) : new Map();
+  const exif = exifOffset
+    ? readIfd(view, tiffOffset, tiffOffset + exifOffset, littleEndian)
+    : new Map();
 
   const make = readStringTag(view, tiffOffset, root, 0x010f);
   const model = readStringTag(view, tiffOffset, root, 0x0110);
@@ -205,9 +272,15 @@ function parseExifTiff(view: DataView, tiffOffset: number): ExifMetadata {
     camera: [make, model].filter(Boolean).join(" ").trim() || undefined,
     lens,
     iso: readNumericTag(exif, 0x8827),
-    aperture: formatFNumber(readRationalTag(view, tiffOffset, exif, 0x829d, littleEndian)),
-    shutter: formatShutter(readRationalTag(view, tiffOffset, exif, 0x829a, littleEndian)),
-    focalLength: formatFocalLength(readRationalTag(view, tiffOffset, exif, 0x920a, littleEndian)),
+    aperture: formatFNumber(
+      readRationalTag(view, tiffOffset, exif, 0x829d, littleEndian),
+    ),
+    shutter: formatShutter(
+      readRationalTag(view, tiffOffset, exif, 0x829a, littleEndian),
+    ),
+    focalLength: formatFocalLength(
+      readRationalTag(view, tiffOffset, exif, 0x920a, littleEndian),
+    ),
   };
 }
 
@@ -216,8 +289,14 @@ function readIfd(
   tiffOffset: number,
   ifdOffset: number,
   littleEndian: boolean,
-): Map<number, { type: number; count: number; valueOffset: number; entryOffset: number }> {
-  const entries = new Map<number, { type: number; count: number; valueOffset: number; entryOffset: number }>();
+): Map<
+  number,
+  { type: number; count: number; valueOffset: number; entryOffset: number }
+> {
+  const entries = new Map<
+    number,
+    { type: number; count: number; valueOffset: number; entryOffset: number }
+  >();
   if (ifdOffset + 2 > view.byteLength) return entries;
 
   const count = readUint16(view, ifdOffset, littleEndian);
@@ -229,7 +308,12 @@ function readIfd(
     const type = readUint16(view, entryOffset + 2, littleEndian);
     const valueCount = readUint32(view, entryOffset + 4, littleEndian);
     const valueOffset = readUint32(view, entryOffset + 8, littleEndian);
-    entries.set(tag, { type, count: valueCount, valueOffset, entryOffset: entryOffset + 8 });
+    entries.set(tag, {
+      type,
+      count: valueCount,
+      valueOffset,
+      entryOffset: entryOffset + 8,
+    });
   }
 
   return entries;
@@ -238,20 +322,29 @@ function readIfd(
 function readStringTag(
   view: DataView,
   tiffOffset: number,
-  tags: Map<number, { type: number; count: number; valueOffset: number; entryOffset: number }>,
+  tags: Map<
+    number,
+    { type: number; count: number; valueOffset: number; entryOffset: number }
+  >,
   tag: number,
 ): string | undefined {
   const entry = tags.get(tag);
   if (!entry || entry.type !== 2 || entry.count === 0) return undefined;
 
-  const offset = entry.count <= 4 ? entry.entryOffset : tiffOffset + entry.valueOffset;
+  const offset =
+    entry.count <= 4 ? entry.entryOffset : tiffOffset + entry.valueOffset;
   if (offset + entry.count > view.byteLength) return undefined;
 
-  return readAscii(view, offset, entry.count).replace(/\0+$/, "").trim() || undefined;
+  return (
+    readAscii(view, offset, entry.count).replace(/\0+$/, "").trim() || undefined
+  );
 }
 
 function readNumericTag(
-  tags: Map<number, { type: number; count: number; valueOffset: number; entryOffset: number }>,
+  tags: Map<
+    number,
+    { type: number; count: number; valueOffset: number; entryOffset: number }
+  >,
   tag: number,
 ): number | undefined {
   const entry = tags.get(tag);
@@ -262,7 +355,10 @@ function readNumericTag(
 function readRationalTag(
   view: DataView,
   tiffOffset: number,
-  tags: Map<number, { type: number; count: number; valueOffset: number; entryOffset: number }>,
+  tags: Map<
+    number,
+    { type: number; count: number; valueOffset: number; entryOffset: number }
+  >,
   tag: number,
   littleEndian: boolean,
 ): number | undefined {
@@ -280,7 +376,9 @@ function readRationalTag(
 function parseExifDate(value?: string): string | null {
   if (!value) return null;
 
-  const match = value.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  const match = value.match(
+    /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/,
+  );
   if (!match) return null;
 
   const [, year, month, day, hour, minute, second] = match;
@@ -293,14 +391,19 @@ function formatFNumber(value?: number): string | undefined {
 
 function formatShutter(value?: number): string | undefined {
   if (!value) return undefined;
-  return value >= 1 ? `${Number(value.toFixed(2))}s` : `1/${Math.round(1 / value)}s`;
+  return value >= 1
+    ? `${Number(value.toFixed(2))}s`
+    : `1/${Math.round(1 / value)}s`;
 }
 
 function formatFocalLength(value?: number): string | undefined {
   return value ? `${Math.round(value)}mm` : undefined;
 }
 
-function buildMoodTags(fingerprint: PhotoColorFingerprint, orientation: string): string[] {
+function buildMoodTags(
+  fingerprint: PhotoColorFingerprint,
+  orientation: string,
+): string[] {
   const tags = [orientation];
 
   if (fingerprint.brightness < 0.28) tags.push("low-key-shadow");
@@ -330,7 +433,11 @@ function rgbStats(r: number, g: number, b: number) {
 
 function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b]
-    .map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, "0"))
+    .map((channel) =>
+      Math.max(0, Math.min(255, Math.round(channel)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
     .join("")}`;
 }
 
@@ -347,9 +454,13 @@ function readAscii(view: DataView, offset: number, length: number) {
 }
 
 function readUint16(view: DataView, offset: number, littleEndian: boolean) {
-  return offset + 2 <= view.byteLength ? view.getUint16(offset, littleEndian) : 0;
+  return offset + 2 <= view.byteLength
+    ? view.getUint16(offset, littleEndian)
+    : 0;
 }
 
 function readUint32(view: DataView, offset: number, littleEndian: boolean) {
-  return offset + 4 <= view.byteLength ? view.getUint32(offset, littleEndian) : 0;
+  return offset + 4 <= view.byteLength
+    ? view.getUint32(offset, littleEndian)
+    : 0;
 }
