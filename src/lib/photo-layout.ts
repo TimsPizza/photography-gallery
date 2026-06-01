@@ -124,7 +124,7 @@ function justifyCandidates(
   const correctedWidths = allocateAvailableWidth(candidates, normalizedWidths, availableWidth);
 
   return {
-    key: candidates.map((candidate) => candidate.photo.id).join(":"),
+    key: candidates.map((candidate) => candidate.photo.fileId).join(":"),
     gap: settings.gap,
     height: rowHeight,
     photos: candidates.map((candidate, index) => ({

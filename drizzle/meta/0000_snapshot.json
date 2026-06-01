@@ -1,28 +1,169 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7a364230-4e9c-4910-b5fd-23864f90842c",
+  "id": "9c4f81c2-bca2-4e6d-8932-34a2b3839f2b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "photo_color_fingerprints": {
-      "name": "photo_color_fingerprints",
+    "galleries": {
+      "name": "galleries",
       "columns": {
-        "photo_id": {
-          "name": "photo_id",
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "version": {
-          "name": "version",
+        "url_slug": {
+          "name": "url_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "galleries_url_slug_unique": {
+          "name": "galleries_url_slug_unique",
+          "columns": [
+            "url_slug"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "gallery_photos": {
+      "name": "gallery_photos",
+      "columns": {
+        "gallery_id": {
+          "name": "gallery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "order_index": {
+          "name": "order_index",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "fingerprint_json": {
-          "name": "fingerprint_json",
+        "added_at": {
+          "name": "added_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "gallery_photos_file_id_idx": {
+          "name": "gallery_photos_file_id_idx",
+          "columns": [
+            "file_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "gallery_photos_gallery_id_galleries_id_fk": {
+          "name": "gallery_photos_gallery_id_galleries_id_fk",
+          "tableFrom": "gallery_photos",
+          "tableTo": "galleries",
+          "columnsFrom": [
+            "gallery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gallery_photos_file_id_photos_file_id_fk": {
+          "name": "gallery_photos_file_id_photos_file_id_fk",
+          "tableFrom": "gallery_photos",
+          "tableTo": "photos",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "file_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gallery_photos_gallery_id_file_id_pk": {
+          "columns": [
+            "gallery_id",
+            "file_id"
+          ],
+          "name": "gallery_photos_gallery_id_file_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "photo_tags": {
+      "name": "photo_tags",
+      "columns": {
+        "file_id": {
+          "name": "file_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tag_kind": {
+          "name": "tag_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tag_name": {
+          "name": "tag_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -38,27 +179,43 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "photo_color_fingerprints_photo_id_photos_id_fk": {
-          "name": "photo_color_fingerprints_photo_id_photos_id_fk",
-          "tableFrom": "photo_color_fingerprints",
+        "photo_tags_file_id_photos_file_id_fk": {
+          "name": "photo_tags_file_id_photos_file_id_fk",
+          "tableFrom": "photo_tags",
           "tableTo": "photos",
           "columnsFrom": [
-            "photo_id"
+            "file_id"
           ],
           "columnsTo": [
-            "id"
+            "file_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "photo_tags_tag_kind_tag_name_tags_kind_name_fk": {
+          "name": "photo_tags_tag_kind_tag_name_tags_kind_name_fk",
+          "tableFrom": "photo_tags",
+          "tableTo": "tags",
+          "columnsFrom": [
+            "tag_kind",
+            "tag_name"
+          ],
+          "columnsTo": [
+            "kind",
+            "name"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "photo_color_fingerprints_photo_id_version_pk": {
+        "photo_tags_file_id_tag_kind_tag_name_pk": {
           "columns": [
-            "photo_id",
-            "version"
+            "file_id",
+            "tag_kind",
+            "tag_name"
           ],
-          "name": "photo_color_fingerprints_photo_id_version_pk"
+          "name": "photo_tags_file_id_tag_kind_tag_name_pk"
         }
       },
       "uniqueConstraints": {},
@@ -67,17 +224,10 @@
     "photos": {
       "name": "photos",
       "columns": {
-        "id": {
-          "name": "id",
+        "file_id": {
+          "name": "file_id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "original_file_name": {
-          "name": "original_file_name",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -88,8 +238,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "file_id": {
-          "name": "file_id",
+        "original_file_name": {
+          "name": "original_file_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -100,6 +250,34 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "thumbnail_file_id": {
+          "name": "thumbnail_file_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thumbnail_final_file_name": {
+          "name": "thumbnail_final_file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thumbnail_file_url": {
+          "name": "thumbnail_file_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "metadata_id": {
+          "name": "metadata_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "capture_time": {
@@ -144,63 +322,20 @@
           "notNull": true,
           "autoincrement": false
         },
-        "camera": {
-          "name": "camera",
+        "color_fingerprint_json": {
+          "name": "color_fingerprint_json",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
-        "lens": {
-          "name": "lens",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "iso": {
-          "name": "iso",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "aperture": {
-          "name": "aperture",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "shutter": {
-          "name": "shutter",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "focal_length": {
-          "name": "focal_length",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "manual_tags_json": {
-          "name": "manual_tags_json",
+        "exif_json": {
+          "name": "exif_json",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'[]'"
-        },
-        "auto_mood_tags_json": {
-          "name": "auto_mood_tags_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
+          "default": "'{}'"
         },
         "created_at": {
           "name": "created_at",
@@ -218,10 +353,17 @@
         }
       },
       "indexes": {
-        "photos_file_id_unique": {
-          "name": "photos_file_id_unique",
+        "photos_metadata_id_unique": {
+          "name": "photos_metadata_id_unique",
           "columns": [
-            "file_id"
+            "metadata_id"
+          ],
+          "isUnique": true
+        },
+        "photos_thumbnail_file_id_unique": {
+          "name": "photos_thumbnail_file_id_unique",
+          "columns": [
+            "thumbnail_file_id"
           ],
           "isUnique": true
         },
@@ -236,6 +378,52 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "tags": {
+      "name": "tags",
+      "columns": {
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "tags_kind_name_pk": {
+          "columns": [
+            "kind",
+            "name"
+          ],
+          "name": "tags_kind_name_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     }

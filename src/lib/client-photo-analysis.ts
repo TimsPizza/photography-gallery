@@ -1,25 +1,22 @@
 "use client";
 
 import {
-  COLOR_FINGERPRINT_VERSION,
   DominantColorRole,
+  ExifMetadata,
   PhotoColorFingerprint,
   PhotoUploadMetadata,
 } from "@/lib/photo-metadata";
 
-type ExifMetadata = {
-  captureTime: string | null;
-  camera?: string;
-  lens?: string;
-  iso?: number;
-  aperture?: string;
-  shutter?: string;
-  focalLength?: string;
-};
-
 const JPEG_SOI = 0xffd8;
 const EXIF_HEADER = "Exif\0\0";
 const ANALYSIS_SIZE = 192;
+const DOMINANT_COLOR_LIMIT = 5;
+const MIN_REPRESENTATIVE_COLOR_SHARE = 0.05;
+const COLOR_CLIFF_RATIO = 0.4;
+
+type ParsedExifMetadata = ExifMetadata & {
+  captureTime: string | null;
+};
 
 export async function analyzePhotoFile(
   file: File,
@@ -42,27 +39,17 @@ export async function analyzePhotoFile(
         ? "landscape"
         : "portrait";
 
-  const originalFileName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
-
   return {
-    id: crypto.randomUUID(),
-    originalFileName,
+    originalFileName: file.name,
     captureTime: exif.captureTime,
     uploadTime: new Date().toISOString(),
     width,
     height,
     aspectRatio,
     orientation,
-    camera: exif.camera,
-    lens: exif.lens,
-    iso: exif.iso,
-    aperture: exif.aperture,
-    shutter: exif.shutter,
-    focalLength: exif.focalLength,
-    colorFingerprintVersion: COLOR_FINGERPRINT_VERSION,
+    exif: omitEmptyExif(exif),
     colorFingerprint: fingerprint,
-    manualTags: [],
-    autoMoodTags: buildMoodTags(fingerprint, orientation),
+    colorTags: buildColorTags(fingerprint, orientation),
   };
 }
 
@@ -192,9 +179,9 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
       0,
     ) / brightnessValues.length;
 
-  const dominantColors = Array.from(buckets.values())
+  const dominantColors = trimDominantColors(
+    Array.from(buckets.values())
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
     .map((bucket, index) => ({
       color: rgbToHex(
         bucket.r / bucket.count,
@@ -203,7 +190,8 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
       ),
       percentage: Number((bucket.count / count).toFixed(4)),
       role: dominantColorRole(index),
-    }));
+    })),
+  );
 
   return {
     dominantColors,
@@ -215,7 +203,7 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
   };
 }
 
-async function readExifMetadata(file: File): Promise<ExifMetadata> {
+async function readExifMetadata(file: File): Promise<ParsedExifMetadata> {
   if (!["image/jpeg", "image/jpg"].includes(file.type.toLowerCase())) {
     return { captureTime: null };
   }
@@ -246,7 +234,10 @@ async function readExifMetadata(file: File): Promise<ExifMetadata> {
   return { captureTime: null };
 }
 
-function parseExifTiff(view: DataView, tiffOffset: number): ExifMetadata {
+function parseExifTiff(
+  view: DataView,
+  tiffOffset: number,
+): ParsedExifMetadata {
   const littleEndian = readAscii(view, tiffOffset, 2) === "II";
   const firstIfdOffset = readUint32(view, tiffOffset + 4, littleEndian);
   const root = readIfd(
@@ -400,7 +391,37 @@ function formatFocalLength(value?: number): string | undefined {
   return value ? `${Math.round(value)}mm` : undefined;
 }
 
-function buildMoodTags(
+function trimDominantColors(
+  colors: {
+    color: string;
+    percentage: number;
+    role: DominantColorRole;
+  }[],
+) {
+  const trimmed: typeof colors = [];
+
+  for (const color of colors) {
+    const previous = trimmed[trimmed.length - 1];
+    if (
+      previous &&
+      color.percentage < MIN_REPRESENTATIVE_COLOR_SHARE &&
+      color.percentage / previous.percentage < COLOR_CLIFF_RATIO
+    ) {
+      break;
+    }
+
+    trimmed.push({
+      ...color,
+      role: dominantColorRole(trimmed.length),
+    });
+
+    if (trimmed.length >= DOMINANT_COLOR_LIMIT) break;
+  }
+
+  return trimmed.length > 0 ? trimmed : colors.slice(0, 1);
+}
+
+function buildColorTags(
   fingerprint: PhotoColorFingerprint,
   orientation: string,
 ): string[] {
@@ -414,6 +435,12 @@ function buildMoodTags(
   if (fingerprint.contrast > 0.24) tags.push("high-contrast");
 
   return Array.from(new Set(tags));
+}
+
+function omitEmptyExif(exif: ParsedExifMetadata) {
+  const { captureTime, ...displayExif } = exif;
+  void captureTime;
+  return displayExif;
 }
 
 function dominantColorRole(index: number): DominantColorRole {

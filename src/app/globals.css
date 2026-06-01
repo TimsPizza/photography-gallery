@@ -47,6 +47,100 @@ a {
   margin-top: 2rem;
 }
 
+.manage-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.manage-tool-panel,
+.batch-editor {
+  display: grid;
+  gap: 0.9rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.manage-tool-panel h2 {
+  font-size: 1rem;
+  font-weight: 760;
+}
+
+.gallery-create-grid,
+.batch-editor-row,
+.photo-field-stack {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.gallery-create-grid input,
+.batch-editor input,
+.photo-field-stack input,
+.batch-editor select,
+.photo-field-stack select {
+  width: 100%;
+  min-height: 2.45rem;
+  border: 1px solid rgb(33 31 27 / 16%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 72%);
+  color: var(--foreground);
+  padding: 0.45rem 0.65rem;
+}
+
+.batch-editor select,
+.photo-field-stack select {
+  min-height: 5.5rem;
+}
+
+.batch-editor button,
+.photo-field-stack button {
+  min-height: 2.35rem;
+  border: 1px solid rgb(33 31 27 / 16%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 76%);
+  color: var(--foreground);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.batch-editor button:disabled,
+.photo-field-stack button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.tag-chip-list,
+.photo-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag-chip,
+.muted-chip {
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  background: rgb(33 31 27 / 8%);
+  color: #3a342a;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.muted-chip {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.color-tag {
+  background: rgb(166 117 42 / 15%);
+}
+
+.user-tag {
+  background: rgb(63 128 82 / 16%);
+}
+
 .section-header {
   display: flex;
   align-items: center;

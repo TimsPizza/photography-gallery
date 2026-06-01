@@ -3,70 +3,27 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { StoredPhotoMetadata } from "@/contracts/photo";
-import {
-  calculateTimelineRows,
-  getPhotoDate,
-  TimelinePhotoLayout,
-  TimelinePhotoRow,
-} from "@/lib/photo-layout";
+import { usePhotoWallController } from "@/controllers/use-photo-wall-controller";
+import { getPhotoDate, TimelinePhotoLayout, TimelinePhotoRow } from "@/lib/photo-layout";
+import { getPhotoThumbnailUrl } from "@/lib/photo-url";
 import type { CSSProperties } from "react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo } from "react";
 
 type PhotoWallProps = {
   photos: StoredPhotoMetadata[];
 };
 
-const monthLabelFormatter = new Intl.DateTimeFormat("en", {
-  month: "long",
-  year: "numeric",
-});
-
 export function PhotoWall({ photos }: PhotoWallProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(1120);
-  const [activePhoto, setActivePhoto] = useState<StoredPhotoMetadata | null>(
-    null,
-  );
+  const {
+    activePhoto,
+    closePhoto,
+    containerRef,
+    isEmpty,
+    openPhoto,
+    rowsWithMarkers,
+  } = usePhotoWallController(photos);
 
-  const rows = useMemo(
-    () => calculateTimelineRows(photos, containerWidth),
-    [containerWidth, photos],
-  );
-
-  const rowsWithMarkers = useMemo(() => {
-    type AccType = { row: TimelinePhotoRow; label: string | null; _key?: string };
-    return rows.reduce<AccType[]>(
-      (acc, row) => {
-        if (!row.photos.length) {
-          acc.push({ row, label: null });
-          return acc;
-        }
-        const date = getPhotoDate(row.photos[0].photo);
-        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const lastKey = acc.length > 0 ? acc[acc.length - 1]._key : "";
-        let label = null;
-        if (key !== lastKey) {
-          label = monthLabelFormatter.format(date);
-        }
-        acc.push({ row, label, _key: key });
-        return acc;
-      },
-      [],
-    );
-  }, [rows]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const observer = new ResizeObserver(([entry]) => {
-      setContainerWidth(entry.contentRect.width);
-    });
-    observer.observe(containerRef.current);
-
-    return () => observer.disconnect();
-  }, []);
-
-  if (photos.length === 0) {
+  if (isEmpty) {
     return (
       <section className="timeline-empty">
         <p>No photos yet.</p>
@@ -85,7 +42,7 @@ export function PhotoWall({ photos }: PhotoWallProps) {
                 <p>{label}</p>
               </div>
             )}
-            <PhotoRow row={row} onOpen={setActivePhoto} />
+            <PhotoRow row={row} onOpen={openPhoto} />
           </div>
         ))}
       </div>
@@ -93,7 +50,7 @@ export function PhotoWall({ photos }: PhotoWallProps) {
       {activePhoto ? (
         <PhotoOverlay
           photo={activePhoto}
-          onClose={() => setActivePhoto(null)}
+          onClose={closePhoto}
         />
       ) : null}
     </section>
@@ -118,7 +75,7 @@ const PhotoRow = memo(function PhotoRow({
       }
     >
       {row.photos.map((item) => (
-        <PhotoTile item={item} key={item.photo.id} onOpen={onOpen} />
+        <PhotoTile item={item} key={item.photo.fileId} onOpen={onOpen} />
       ))}
     </div>
   );
@@ -148,21 +105,12 @@ const PhotoTile = memo(function PhotoTile({
         alt={item.photo.originalFileName}
         loading="lazy"
         decoding="async"
-        src={getThumbnailUrl(item.photo)}
+        src={getPhotoThumbnailUrl(item.photo)}
       />
       <span>{formatDayLabel(getPhotoDate(item.photo))}</span>
     </button>
   );
 });
-
-function getThumbnailUrl(photo: StoredPhotoMetadata) {
-  const finalName = photo.finalFileName;
-  const baseName = finalName.includes(".")
-    ? finalName.substring(0, finalName.lastIndexOf("."))
-    : finalName;
-  const thumbName = `thumbnail_${baseName}.webp`;
-  return photo.fileUrl.replace(finalName, thumbName);
-}
 
 function PhotoOverlay({
   photo,

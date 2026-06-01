@@ -22,8 +22,10 @@ type ImgbedUploadResponse = {
 
 const UPLOAD_NAME_TYPE = "origin";
 const RETURN_FORMAT = "full";
+const AUTO_RETRY = "false";
 const AUTH_PREFIX = "UploadTicket ";
 const MAX_CLOCK_SKEW_SECONDS = 30;
+const MAX_UPSTREAM_DIAGNOSTIC_BYTES = 16 * 1024;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -110,13 +112,33 @@ export default {
       body: request.body,
     });
 
-    const imgbedJson = await imgbedResponse.json().catch(() => null);
-    const src = parseImgbedSrc(imgbedJson);
+    const requestId = crypto.randomUUID();
+    const imgbedPayload = await readUpstreamPayload(imgbedResponse);
+    const src = parseImgbedSrc(imgbedPayload.json);
     if (!imgbedResponse.ok || !src) {
       return json(
         {
           error: "Imgbed upload failed",
-          status: imgbedResponse.status,
+          requestId,
+          upstream: {
+            service: "imgbed",
+            status: imgbedResponse.status,
+            statusText: imgbedResponse.statusText,
+            contentType: imgbedResponse.headers.get("Content-Type"),
+            bodyTruncated: imgbedPayload.truncated,
+            bodyJson: imgbedPayload.json,
+            bodyText: imgbedPayload.text,
+          },
+          upload: {
+            originalFileName: payload.value.originalFileName,
+            uploadFolder: payload.value.uploadFolder,
+            uploadNameType: UPLOAD_NAME_TYPE,
+            returnFormat: RETURN_FORMAT,
+            autoRetry: AUTO_RETRY,
+          },
+          expected: {
+            responseShape: `[{ "src": "https://.../file/..." }]`,
+          },
         },
         502,
         cors,
@@ -133,6 +155,16 @@ export default {
             error instanceof Error
               ? error.message
               : "Invalid imgbed upload response",
+          requestId,
+          upstream: {
+            service: "imgbed",
+            status: imgbedResponse.status,
+            statusText: imgbedResponse.statusText,
+            contentType: imgbedResponse.headers.get("Content-Type"),
+            bodyTruncated: imgbedPayload.truncated,
+            bodyJson: imgbedPayload.json,
+            bodyText: imgbedPayload.text,
+          },
         },
         502,
         cors,
@@ -158,6 +190,7 @@ function buildImgbedUploadUrl(env: Env, payload: UploadTicketPayload) {
   url.searchParams.set("uploadNameType", UPLOAD_NAME_TYPE);
   url.searchParams.set("returnFormat", RETURN_FORMAT);
   url.searchParams.set("uploadFolder", payload.uploadFolder);
+  url.searchParams.set("autoRetry", AUTO_RETRY);
   return url;
 }
 
@@ -299,6 +332,72 @@ function parseImgbedSrc(value: unknown) {
   return typeof first?.src === "string" && first.src.length > 0
     ? first.src
     : null;
+}
+
+async function readUpstreamPayload(response: Response) {
+  const { text, truncated } = await readLimitedText(
+    response,
+    MAX_UPSTREAM_DIAGNOSTIC_BYTES,
+  );
+  const json = parseJsonOrNull(text);
+
+  return {
+    json,
+    text,
+    truncated,
+  };
+}
+
+async function readLimitedText(response: Response, maxBytes: number) {
+  if (!response.body) {
+    return { text: "", truncated: false };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let truncated = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    if (totalBytes + value.byteLength > maxBytes) {
+      const remainingBytes = Math.max(0, maxBytes - totalBytes);
+      if (remainingBytes > 0) {
+        chunks.push(value.slice(0, remainingBytes));
+        totalBytes += remainingBytes;
+      }
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+
+    chunks.push(value);
+    totalBytes += value.byteLength;
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return {
+    text: new TextDecoder().decode(bytes),
+    truncated,
+  };
+}
+
+function parseJsonOrNull(value: string) {
+  if (!value) return null;
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function extractFileIdentity(src: string, baseUrl: string) {

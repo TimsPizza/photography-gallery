@@ -6,7 +6,7 @@ type UploadTicketPayload = {
   originalFileName: string;
   uploadFolder: string;
   maxBytes: number;
-  metadataId: string;
+  metadataId?: string;
 };
 
 const DEFAULT_TICKET_TTL_SECONDS = 5 * 60;
@@ -22,7 +22,37 @@ export function createUploadTicket(metadata: PhotoUploadMetadata, fileSize: numb
     originalFileName: metadata.originalFileName,
     uploadFolder,
     maxBytes,
-    metadataId: metadata.id,
+  };
+  const payloadPart = base64UrlEncode(JSON.stringify(payload));
+  const signaturePart = createHmac("sha256", mustGetEnv("UPLOAD_TICKET_SECRET"))
+    .update(payloadPart)
+    .digest("base64url");
+
+  return {
+    ticket: `${payloadPart}.${signaturePart}`,
+    uploadFolder,
+    expiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
+  };
+}
+
+export function createThumbnailUploadTicket({
+  fileSize,
+  originalFileId,
+  thumbnailFileName,
+}: {
+  fileSize: number;
+  originalFileId: string;
+  thumbnailFileName: string;
+}) {
+  const ttlSeconds = getOptionalNumberEnv("UPLOAD_TICKET_TTL_SECONDS") ?? DEFAULT_TICKET_TTL_SECONDS;
+  const expiresAtSeconds = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const uploadFolder = getFolderFromFileId(originalFileId);
+  const maxBytes = getMaxUploadBytes(fileSize);
+  const payload: UploadTicketPayload = {
+    exp: expiresAtSeconds,
+    originalFileName: thumbnailFileName,
+    uploadFolder,
+    maxBytes,
   };
   const payloadPart = base64UrlEncode(JSON.stringify(payload));
   const signaturePart = createHmac("sha256", mustGetEnv("UPLOAD_TICKET_SECRET"))
@@ -49,6 +79,15 @@ function getUploadFolder(metadata: PhotoUploadMetadata) {
   }
 
   return `${baseFolder}/${date.getFullYear()}`;
+}
+
+function getFolderFromFileId(fileId: string) {
+  const index = fileId.lastIndexOf("/");
+  if (index <= 0) {
+    return (process.env.PHOTO_UPLOAD_FOLDER || "photos").replace(/^\/+|\/+$/g, "");
+  }
+
+  return fileId.slice(0, index);
 }
 
 function getMaxUploadBytes(fileSize: number) {
