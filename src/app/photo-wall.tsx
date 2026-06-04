@@ -6,6 +6,7 @@ import { StoredPhotoMetadata } from "@/contracts/photo";
 import { usePhotoWallController } from "@/controllers/use-photo-wall-controller";
 import { getPhotoDate, TimelinePhotoLayout, TimelinePhotoRow } from "@/lib/photo-layout";
 import { getPhotoThumbnailUrl } from "@/lib/photo-url";
+import FluidGlass from "@/components/FluidGlass";
 import type { CSSProperties } from "react";
 import { memo } from "react";
 
@@ -33,6 +34,16 @@ export function PhotoWall({ photos }: PhotoWallProps) {
 
   return (
     <section className="timeline-wall" ref={containerRef}>
+      <FluidGlass
+        className="timeline-rail-glass"
+        mode="bar"
+        barProps={{
+          scale: 0.08,
+          thickness: 8,
+          chromaticAberration: 0.05,
+          attenuationDistance: 0.3,
+        }}
+      />
       <div className="photo-grid">
         {rowsWithMarkers.map(({ row, label }) => (
           <div key={row.key} style={{ position: "relative" }}>

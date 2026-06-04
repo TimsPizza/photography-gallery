@@ -4,6 +4,8 @@ import {
   Gallery,
   galleryListResponseSchema,
   gallerySchema,
+  MoodRebuildResponse,
+  moodRebuildResponseSchema,
   photoListResponseSchema,
   StoredPhotoMetadata,
   tagListResponseSchema,
@@ -28,6 +30,9 @@ export function useManagePhotosController() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [isRebuildingMood, setIsRebuildingMood] = useState(false);
+  const [moodRebuildResult, setMoodRebuildResult] =
+    useState<MoodRebuildResponse | null>(null);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQueryState] = useState("");
   const [tagFilter, setTagFilterState] = useState("");
@@ -302,6 +307,23 @@ export function useManagePhotosController() {
     }
   }
 
+  async function rebuildMoodGroups() {
+    setIsRebuildingMood(true);
+    setMoodRebuildResult(null);
+
+    try {
+      const json = await fetchJson("/api/mood/rebuild", {
+        method: "POST",
+      });
+      setMoodRebuildResult(moodRebuildResponseSchema.parse(json));
+    } catch (error) {
+      console.error("Failed to rebuild mood groups:", error);
+      alert("Failed to rebuild mood groups. Check console for details.");
+    } finally {
+      setIsRebuildingMood(false);
+    }
+  }
+
   function toggleSelect(id: string, checked: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -358,13 +380,16 @@ export function useManagePhotosController() {
     isDeletingBatch,
     isLoading,
     isMutating,
+    isRebuildingMood,
     isSelectAllChecked: photos.length > 0 && selectedIds.size === photos.length,
     filteredCount: filteredPhotos.length,
+    moodRebuildResult,
     nextPage: () => setPage((current) => Math.min(totalPages, current + 1)),
     pageSize: FILES_PAGE_SIZE,
     paginatedPhotos,
     photos,
     previousPage: () => setPage((current) => Math.max(1, current - 1)),
+    rebuildMoodGroups,
     savePhotoGalleries,
     savePhotoUserTags,
     selectedCount: selectedIds.size,

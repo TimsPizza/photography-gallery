@@ -103,6 +103,51 @@ export const galleryPhotos = sqliteTable(
   ],
 );
 
+export const moodClusters = sqliteTable(
+  "mood_clusters",
+  {
+    id: text("id").primaryKey(),
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    photoCount: integer("photo_count").notNull(),
+    centroidJson: text("centroid_json").notNull(),
+    previewColorsJson: text("preview_colors_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("mood_clusters_version_slug_unique").on(
+      table.version,
+      table.slug,
+    ),
+    index("mood_clusters_version_photo_count_idx").on(
+      table.version,
+      table.photoCount,
+    ),
+  ],
+);
+
+export const photoMoodAssignments = sqliteTable(
+  "photo_mood_assignments",
+  {
+    photoId: text("photo_id")
+      .notNull()
+      .references(() => photos.fileId, { onDelete: "cascade" }),
+    clusterId: text("cluster_id")
+      .notNull()
+      .references(() => moodClusters.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    confidence: real("confidence").notNull(),
+    distance: real("distance").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.photoId, table.version] }),
+    index("photo_mood_assignments_cluster_id_idx").on(table.clusterId),
+  ],
+);
+
 export type PhotoRow = typeof photos.$inferSelect;
 export type NewPhotoRow = typeof photos.$inferInsert;
 export type TagRow = typeof tags.$inferSelect;
@@ -111,3 +156,5 @@ export type PhotoTagRow = typeof photoTags.$inferSelect;
 export type GalleryRow = typeof galleries.$inferSelect;
 export type NewGalleryRow = typeof galleries.$inferInsert;
 export type GalleryPhotoRow = typeof galleryPhotos.$inferSelect;
+export type MoodClusterRow = typeof moodClusters.$inferSelect;
+export type PhotoMoodAssignmentRow = typeof photoMoodAssignments.$inferSelect;

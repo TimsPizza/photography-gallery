@@ -382,7 +382,8 @@ function isRetryableUploadFailure(json: unknown, status: number) {
     return true;
   }
 
-  const bodyText = typeof upstream?.bodyText === "string" ? upstream.bodyText : "";
+  const bodyText =
+    typeof upstream?.bodyText === "string" ? upstream.bodyText : "";
   return /429|too many requests|rate limit/i.test(bodyText);
 }
 
@@ -392,14 +393,12 @@ function isRateLimitUploadFailure(json: unknown, status: number) {
   const upstream = getUpstreamRecord(json);
   if (upstream?.status === 429) return true;
 
-  const bodyText = typeof upstream?.bodyText === "string" ? upstream.bodyText : "";
+  const bodyText =
+    typeof upstream?.bodyText === "string" ? upstream.bodyText : "";
   return /429|too many requests|rate limit/i.test(bodyText);
 }
 
-function reserveUploadBudget(
-  limiter: UploadRateLimiter,
-  messageCost: number,
-) {
+function reserveUploadBudget(limiter: UploadRateLimiter, messageCost: number) {
   const now = Date.now();
   const next = refillUploadBudget(limiter, now);
   const cooldownWaitMs = Math.max(0, next.cooldownUntil - now);

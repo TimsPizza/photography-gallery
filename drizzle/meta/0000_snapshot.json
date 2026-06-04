@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9c4f81c2-bca2-4e6d-8932-34a2b3839f2b",
+  "id": "a647d562-2544-4184-9c96-425ca6aea9c7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "galleries": {
@@ -140,6 +140,191 @@
             "file_id"
           ],
           "name": "gallery_photos_gallery_id_file_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "mood_clusters": {
+      "name": "mood_clusters",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "photo_count": {
+          "name": "photo_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "centroid_json": {
+          "name": "centroid_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "preview_colors_json": {
+          "name": "preview_colors_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "mood_clusters_version_slug_unique": {
+          "name": "mood_clusters_version_slug_unique",
+          "columns": [
+            "version",
+            "slug"
+          ],
+          "isUnique": true
+        },
+        "mood_clusters_version_photo_count_idx": {
+          "name": "mood_clusters_version_photo_count_idx",
+          "columns": [
+            "version",
+            "photo_count"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "photo_mood_assignments": {
+      "name": "photo_mood_assignments",
+      "columns": {
+        "photo_id": {
+          "name": "photo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cluster_id": {
+          "name": "cluster_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "distance": {
+          "name": "distance",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "photo_mood_assignments_cluster_id_idx": {
+          "name": "photo_mood_assignments_cluster_id_idx",
+          "columns": [
+            "cluster_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "photo_mood_assignments_photo_id_photos_file_id_fk": {
+          "name": "photo_mood_assignments_photo_id_photos_file_id_fk",
+          "tableFrom": "photo_mood_assignments",
+          "tableTo": "photos",
+          "columnsFrom": [
+            "photo_id"
+          ],
+          "columnsTo": [
+            "file_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "photo_mood_assignments_cluster_id_mood_clusters_id_fk": {
+          "name": "photo_mood_assignments_cluster_id_mood_clusters_id_fk",
+          "tableFrom": "photo_mood_assignments",
+          "tableTo": "mood_clusters",
+          "columnsFrom": [
+            "cluster_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "photo_mood_assignments_photo_id_version_pk": {
+          "columns": [
+            "photo_id",
+            "version"
+          ],
+          "name": "photo_mood_assignments_photo_id_version_pk"
         }
       },
       "uniqueConstraints": {},

@@ -19,6 +19,33 @@ CREATE TABLE `gallery_photos` (
 );
 --> statement-breakpoint
 CREATE INDEX `gallery_photos_file_id_idx` ON `gallery_photos` (`file_id`);--> statement-breakpoint
+CREATE TABLE `mood_clusters` (
+	`id` text PRIMARY KEY NOT NULL,
+	`version` integer NOT NULL,
+	`name` text NOT NULL,
+	`slug` text NOT NULL,
+	`photo_count` integer NOT NULL,
+	`centroid_json` text NOT NULL,
+	`preview_colors_json` text NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `mood_clusters_version_slug_unique` ON `mood_clusters` (`version`,`slug`);--> statement-breakpoint
+CREATE INDEX `mood_clusters_version_photo_count_idx` ON `mood_clusters` (`version`,`photo_count`);--> statement-breakpoint
+CREATE TABLE `photo_mood_assignments` (
+	`photo_id` text NOT NULL,
+	`cluster_id` text NOT NULL,
+	`version` integer NOT NULL,
+	`confidence` real NOT NULL,
+	`distance` real NOT NULL,
+	`created_at` text NOT NULL,
+	PRIMARY KEY(`photo_id`, `version`),
+	FOREIGN KEY (`photo_id`) REFERENCES `photos`(`file_id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`cluster_id`) REFERENCES `mood_clusters`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `photo_mood_assignments_cluster_id_idx` ON `photo_mood_assignments` (`cluster_id`);--> statement-breakpoint
 CREATE TABLE `photo_tags` (
 	`file_id` text NOT NULL,
 	`tag_kind` text NOT NULL,

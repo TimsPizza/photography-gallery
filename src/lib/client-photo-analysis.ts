@@ -1,22 +1,64 @@
 "use client";
 
 import {
+  ColorSpaceSample,
   DominantColorRole,
   ExifMetadata,
   PhotoColorFingerprint,
   PhotoUploadMetadata,
 } from "@/lib/photo-metadata";
+import { converter } from "culori";
+import exifr from "exifr";
 
-const JPEG_SOI = 0xffd8;
-const EXIF_HEADER = "Exif\0\0";
-const ANALYSIS_SIZE = 192;
-const DOMINANT_COLOR_LIMIT = 5;
-const MIN_REPRESENTATIVE_COLOR_SHARE = 0.05;
-const COLOR_CLIFF_RATIO = 0.4;
+const ANALYSIS_SIZE = 384;
+const FINGERPRINT_ALGORITHM_VERSION = 2;
+const DOMINANT_COLOR_LIMIT = 6;
+const RGB_BUCKET_SIZE = 16;
+const MIN_REPRESENTATIVE_COLOR_SHARE = 0.025;
+const COLOR_CLIFF_RATIO = 0.28;
+const HUE_BINS = 24;
+const LIGHTNESS_BINS = 12;
+const CHROMA_BINS = 12;
+const CHROMA_HISTOGRAM_MAX = 0.4;
 
 type ParsedExifMetadata = ExifMetadata & {
   captureTime: string | null;
 };
+
+type PixelSample = {
+  r: number;
+  g: number;
+  b: number;
+  brightness: number;
+  saturation: number;
+  warmth: number;
+  chroma: number;
+  hue: number | null;
+  lightness: number;
+};
+
+type ColorBucket = {
+  count: number;
+  r: number;
+  g: number;
+  b: number;
+};
+
+type CuloriColor = {
+  mode: string;
+  r?: number;
+  g?: number;
+  b?: number;
+  h?: number;
+  s?: number;
+  l?: number;
+  a?: number;
+  c?: number;
+};
+
+const toHsl = converter("hsl") as (color: CuloriColor) => CuloriColor;
+const toOklab = converter("oklab") as (color: CuloriColor) => CuloriColor;
+const toOklch = converter("oklch") as (color: CuloriColor) => CuloriColor;
 
 export async function analyzePhotoFile(
   file: File,
@@ -122,10 +164,11 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
 
   context.drawImage(image, 0, 0, width, height);
   const pixels = context.getImageData(0, 0, width, height).data;
-  const buckets = new Map<
-    string,
-    { count: number; r: number; g: number; b: number }
-  >();
+  const samples: PixelSample[] = [];
+  const buckets = new Map<string, ColorBucket>();
+  const hueHistogram = createHistogram(HUE_BINS);
+  const lightnessHistogram = createHistogram(LIGHTNESS_BINS);
+  const chromaHistogram = createHistogram(CHROMA_BINS);
 
   let rTotal = 0;
   let gTotal = 0;
@@ -133,8 +176,12 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
   let brightnessTotal = 0;
   let saturationTotal = 0;
   let warmthTotal = 0;
-  const brightnessValues: number[] = [];
-  let count = 0;
+  let chromaTotal = 0;
+  let rgVarianceTotal = 0;
+  let ybVarianceTotal = 0;
+  let shadowCount = 0;
+  let midtoneCount = 0;
+  let highlightCount = 0;
 
   for (let index = 0; index < pixels.length; index += 4) {
     const alpha = pixels[index + 3];
@@ -143,257 +190,255 @@ function extractColorFingerprint(image: ImageBitmap): PhotoColorFingerprint {
     const r = pixels[index];
     const g = pixels[index + 1];
     const b = pixels[index + 2];
-    const { brightness, saturation } = rgbStats(r, g, b);
-    const key = `${Math.round(r / 24) * 24},${Math.round(g / 24) * 24},${
-      Math.round(b / 24) * 24
-    }`;
-    const bucket = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+    const color = createColorSample(r, g, b);
+    const stats = rgbStats(r, g, b);
+    const sample: PixelSample = {
+      r,
+      g,
+      b,
+      brightness: stats.brightness,
+      saturation: stats.saturation,
+      warmth: (r - b + 255) / 510,
+      chroma: color.oklch.c,
+      hue: color.oklch.h,
+      lightness: color.oklch.l,
+    };
 
-    bucket.count += 1;
-    bucket.r += r;
-    bucket.g += g;
-    bucket.b += b;
-    buckets.set(key, bucket);
+    samples.push(sample);
+    addToBucket(buckets, r, g, b);
+    addHistogramValue(lightnessHistogram, sample.lightness);
+    addHistogramValue(
+      chromaHistogram,
+      Math.min(1, sample.chroma / CHROMA_HISTOGRAM_MAX),
+    );
+    if (sample.hue !== null && sample.chroma > 0.015) {
+      addHistogramValue(hueHistogram, sample.hue / 360);
+    }
 
     rTotal += r;
     gTotal += g;
     bTotal += b;
-    brightnessTotal += brightness;
-    saturationTotal += saturation;
-    warmthTotal += (r - b + 255) / 510;
-    brightnessValues.push(brightness);
-    count += 1;
+    brightnessTotal += sample.brightness;
+    saturationTotal += sample.saturation;
+    warmthTotal += sample.warmth;
+    chromaTotal += sample.chroma;
+    rgVarianceTotal += (r - g) ** 2;
+    ybVarianceTotal += ((r + g) / 2 - b) ** 2;
+
+    if (sample.lightness < 0.28) {
+      shadowCount += 1;
+    } else if (sample.lightness > 0.78) {
+      highlightCount += 1;
+    } else {
+      midtoneCount += 1;
+    }
   }
 
-  if (count === 0) {
+  if (samples.length === 0) {
     throw new Error("Photo contains no readable pixels.");
   }
 
-  const averageColor = rgbToHex(rTotal / count, gTotal / count, bTotal / count);
+  const count = samples.length;
+  const averageColor = createColorSample(
+    rTotal / count,
+    gTotal / count,
+    bTotal / count,
+  );
+  const medianColor = getMedianLightnessColor(samples);
   const brightness = brightnessTotal / count;
   const saturation = saturationTotal / count;
   const warmth = warmthTotal / count;
-  const variance =
-    brightnessValues.reduce(
-      (sum, value) => sum + (value - brightness) ** 2,
+  const meanChroma = chromaTotal / count;
+  const brightnessVariance =
+    samples.reduce(
+      (sum, sample) => sum + (sample.brightness - brightness) ** 2,
       0,
-    ) / brightnessValues.length;
-
-  const dominantColors = trimDominantColors(
-    Array.from(buckets.values())
-    .sort((a, b) => b.count - a.count)
-    .map((bucket, index) => ({
-      color: rgbToHex(
-        bucket.r / bucket.count,
-        bucket.g / bucket.count,
-        bucket.b / bucket.count,
-      ),
-      percentage: Number((bucket.count / count).toFixed(4)),
-      role: dominantColorRole(index),
-    })),
-  );
+    ) / count;
+  const colorfulness =
+    (Math.sqrt(rgVarianceTotal / count) + Math.sqrt(ybVarianceTotal / count)) /
+    255;
 
   return {
-    dominantColors,
+    version: FINGERPRINT_ALGORITHM_VERSION,
+    dominantColors: buildDominantColors(buckets, count),
     averageColor,
+    medianColor,
     brightness: roundMetric(brightness),
     saturation: roundMetric(saturation),
-    contrast: roundMetric(Math.sqrt(variance)),
+    contrast: roundMetric(Math.sqrt(brightnessVariance)),
     warmth: roundMetric(warmth),
+    colorfulness: roundMetric(colorfulness),
+    meanChroma: roundMetric(meanChroma),
+    monochromeScore: roundMetric(getMonochromeScore(saturation, meanChroma)),
+    shadowShare: roundMetric(shadowCount / count),
+    midtoneShare: roundMetric(midtoneCount / count),
+    highlightShare: roundMetric(highlightCount / count),
+    temperature: getTemperature(warmth),
+    tonalKey: getTonalKey(brightness),
+    saturationKey: getSaturationKey(saturation, meanChroma),
+    hueHistogram: normalizeHistogram(hueHistogram),
+    lightnessHistogram: normalizeHistogram(lightnessHistogram),
+    chromaHistogram: normalizeHistogram(chromaHistogram),
+    algorithm: {
+      name: "canvas-oklch-bucket",
+      version: FINGERPRINT_ALGORITHM_VERSION,
+      resizedMaxDimension: ANALYSIS_SIZE,
+      bucketSize: RGB_BUCKET_SIZE,
+      generatedAt: new Date().toISOString(),
+    },
   };
 }
 
 async function readExifMetadata(file: File): Promise<ParsedExifMetadata> {
-  if (!["image/jpeg", "image/jpg"].includes(file.type.toLowerCase())) {
+  const metadata = (await exifr.parse(file, {
+    pick: [
+      "Make",
+      "Model",
+      "LensModel",
+      "Lens",
+      "ISO",
+      "FNumber",
+      "ExposureTime",
+      "FocalLength",
+      "DateTimeOriginal",
+      "CreateDate",
+    ],
+    tiff: true,
+    exif: true,
+    gps: false,
+    xmp: false,
+    icc: false,
+    iptc: false,
+    mergeOutput: true,
+  }).catch(() => null)) as ExifPayload | null;
+
+  if (!metadata) {
     return { captureTime: null };
   }
 
-  const buffer = await file.slice(0, 256 * 1024).arrayBuffer();
-  const view = new DataView(buffer);
-
-  if (view.byteLength < 4 || view.getUint16(0, false) !== JPEG_SOI) {
-    return { captureTime: null };
-  }
-
-  let offset = 2;
-  while (offset + 4 < view.byteLength) {
-    if (view.getUint8(offset) !== 0xff) break;
-
-    const marker = view.getUint8(offset + 1);
-    const size = view.getUint16(offset + 2, false);
-    if (
-      marker === 0xe1 &&
-      readAscii(view, offset + 4, EXIF_HEADER.length) === EXIF_HEADER
-    ) {
-      return parseExifTiff(view, offset + 10);
-    }
-
-    offset += 2 + size;
-  }
-
-  return { captureTime: null };
-}
-
-function parseExifTiff(
-  view: DataView,
-  tiffOffset: number,
-): ParsedExifMetadata {
-  const littleEndian = readAscii(view, tiffOffset, 2) === "II";
-  const firstIfdOffset = readUint32(view, tiffOffset + 4, littleEndian);
-  const root = readIfd(
-    view,
-    tiffOffset,
-    tiffOffset + firstIfdOffset,
-    littleEndian,
-  );
-  const exifOffset = readNumericTag(root, 0x8769);
-  const exif = exifOffset
-    ? readIfd(view, tiffOffset, tiffOffset + exifOffset, littleEndian)
-    : new Map();
-
-  const make = readStringTag(view, tiffOffset, root, 0x010f);
-  const model = readStringTag(view, tiffOffset, root, 0x0110);
-  const lens = readStringTag(view, tiffOffset, exif, 0xa434);
-  const captureRaw =
-    readStringTag(view, tiffOffset, exif, 0x9003) ??
-    readStringTag(view, tiffOffset, exif, 0x9004);
+  const make = stringifyExifValue(metadata.Make);
+  const model = stringifyExifValue(metadata.Model);
 
   return {
-    captureTime: parseExifDate(captureRaw),
+    captureTime: parseExifDate(metadata.DateTimeOriginal ?? metadata.CreateDate),
     camera: [make, model].filter(Boolean).join(" ").trim() || undefined,
-    lens,
-    iso: readNumericTag(exif, 0x8827),
-    aperture: formatFNumber(
-      readRationalTag(view, tiffOffset, exif, 0x829d, littleEndian),
-    ),
-    shutter: formatShutter(
-      readRationalTag(view, tiffOffset, exif, 0x829a, littleEndian),
-    ),
-    focalLength: formatFocalLength(
-      readRationalTag(view, tiffOffset, exif, 0x920a, littleEndian),
-    ),
+    lens:
+      stringifyExifValue(metadata.LensModel) ??
+      stringifyExifValue(metadata.Lens),
+    iso: toPositiveInteger(metadata.ISO),
+    aperture: formatFNumber(toNumber(metadata.FNumber)),
+    shutter: formatShutter(toNumber(metadata.ExposureTime)),
+    focalLength: formatFocalLength(toNumber(metadata.FocalLength)),
   };
 }
 
-function readIfd(
-  view: DataView,
-  tiffOffset: number,
-  ifdOffset: number,
-  littleEndian: boolean,
-): Map<
-  number,
-  { type: number; count: number; valueOffset: number; entryOffset: number }
-> {
-  const entries = new Map<
-    number,
-    { type: number; count: number; valueOffset: number; entryOffset: number }
-  >();
-  if (ifdOffset + 2 > view.byteLength) return entries;
+function buildDominantColors(
+  buckets: Map<string, ColorBucket>,
+  totalCount: number,
+) {
+  const colors = Array.from(buckets.values())
+    .sort((a, b) => b.count - a.count)
+    .map((bucket, index) => ({
+      ...createColorSample(
+        bucket.r / bucket.count,
+        bucket.g / bucket.count,
+        bucket.b / bucket.count,
+      ),
+      percentage: Number((bucket.count / totalCount).toFixed(4)),
+      role: dominantColorRole(index),
+    }));
 
-  const count = readUint16(view, ifdOffset, littleEndian);
-  for (let i = 0; i < count; i += 1) {
-    const entryOffset = ifdOffset + 2 + i * 12;
-    if (entryOffset + 12 > view.byteLength) break;
-
-    const tag = readUint16(view, entryOffset, littleEndian);
-    const type = readUint16(view, entryOffset + 2, littleEndian);
-    const valueCount = readUint32(view, entryOffset + 4, littleEndian);
-    const valueOffset = readUint32(view, entryOffset + 8, littleEndian);
-    entries.set(tag, {
-      type,
-      count: valueCount,
-      valueOffset,
-      entryOffset: entryOffset + 8,
-    });
-  }
-
-  return entries;
+  return trimDominantColors(colors);
 }
 
-function readStringTag(
-  view: DataView,
-  tiffOffset: number,
-  tags: Map<
-    number,
-    { type: number; count: number; valueOffset: number; entryOffset: number }
-  >,
-  tag: number,
-): string | undefined {
-  const entry = tags.get(tag);
-  if (!entry || entry.type !== 2 || entry.count === 0) return undefined;
+function createColorSample(r: number, g: number, b: number): ColorSpaceSample {
+  const rgb = {
+    r: clamp255(r),
+    g: clamp255(g),
+    b: clamp255(b),
+  };
+  const input = {
+    mode: "rgb",
+    r: rgb.r / 255,
+    g: rgb.g / 255,
+    b: rgb.b / 255,
+  };
+  const hsl = toHsl(input);
+  const oklab = toOklab(input);
+  const oklch = toOklch(input);
 
-  const offset =
-    entry.count <= 4 ? entry.entryOffset : tiffOffset + entry.valueOffset;
-  if (offset + entry.count > view.byteLength) return undefined;
+  return {
+    hex: rgbToHex(rgb.r, rgb.g, rgb.b),
+    rgb,
+    hsl: {
+      h: normalizeHue(hsl.h),
+      s: roundMetric(hsl.s ?? 0),
+      l: roundMetric(hsl.l ?? 0),
+    },
+    oklab: {
+      l: roundMetric(oklab.l ?? 0),
+      a: roundMetric(oklab.a ?? 0),
+      b: roundMetric(oklab.b ?? 0),
+    },
+    oklch: {
+      l: roundMetric(oklch.l ?? 0),
+      c: roundMetric(oklch.c ?? 0),
+      h: normalizeHue(oklch.h),
+    },
+  };
+}
 
-  return (
-    readAscii(view, offset, entry.count).replace(/\0+$/, "").trim() || undefined
+function addToBucket(
+  buckets: Map<string, ColorBucket>,
+  r: number,
+  g: number,
+  b: number,
+) {
+  const key = [
+    quantizeChannel(r),
+    quantizeChannel(g),
+    quantizeChannel(b),
+  ].join(",");
+  const bucket = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+
+  bucket.count += 1;
+  bucket.r += r;
+  bucket.g += g;
+  bucket.b += b;
+  buckets.set(key, bucket);
+}
+
+function getMedianLightnessColor(samples: PixelSample[]) {
+  const sorted = [...samples].sort((a, b) => a.lightness - b.lightness);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  return createColorSample(median.r, median.g, median.b);
+}
+
+function createHistogram(size: number) {
+  return Array.from({ length: size }, () => 0);
+}
+
+function addHistogramValue(histogram: number[], normalizedValue: number) {
+  const index = Math.min(
+    histogram.length - 1,
+    Math.max(0, Math.floor(normalizedValue * histogram.length)),
   );
+  histogram[index] += 1;
 }
 
-function readNumericTag(
-  tags: Map<
-    number,
-    { type: number; count: number; valueOffset: number; entryOffset: number }
-  >,
-  tag: number,
-): number | undefined {
-  const entry = tags.get(tag);
-  if (!entry) return undefined;
-  return entry.valueOffset;
-}
-
-function readRationalTag(
-  view: DataView,
-  tiffOffset: number,
-  tags: Map<
-    number,
-    { type: number; count: number; valueOffset: number; entryOffset: number }
-  >,
-  tag: number,
-  littleEndian: boolean,
-): number | undefined {
-  const entry = tags.get(tag);
-  if (!entry || entry.type !== 5 || entry.count < 1) return undefined;
-
-  const offset = tiffOffset + entry.valueOffset;
-  if (offset + 8 > view.byteLength) return undefined;
-
-  const numerator = readUint32(view, offset, littleEndian);
-  const denominator = readUint32(view, offset + 4, littleEndian);
-  return denominator === 0 ? undefined : numerator / denominator;
-}
-
-function parseExifDate(value?: string): string | null {
-  if (!value) return null;
-
-  const match = value.match(
-    /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/,
-  );
-  if (!match) return null;
-
-  const [, year, month, day, hour, minute, second] = match;
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-}
-
-function formatFNumber(value?: number): string | undefined {
-  return value ? `f/${Number(value.toFixed(1))}` : undefined;
-}
-
-function formatShutter(value?: number): string | undefined {
-  if (!value) return undefined;
-  return value >= 1
-    ? `${Number(value.toFixed(2))}s`
-    : `1/${Math.round(1 / value)}s`;
-}
-
-function formatFocalLength(value?: number): string | undefined {
-  return value ? `${Math.round(value)}mm` : undefined;
+function normalizeHistogram(histogram: number[]) {
+  const total = histogram.reduce((sum, value) => sum + value, 0);
+  if (total === 0) return histogram;
+  return histogram.map((value) => roundMetric(value / total));
 }
 
 function trimDominantColors(
   colors: {
-    color: string;
+    hex: string;
+    rgb: ColorSpaceSample["rgb"];
+    hsl: ColorSpaceSample["hsl"];
+    oklab: ColorSpaceSample["oklab"];
+    oklch: ColorSpaceSample["oklch"];
     percentage: number;
     role: DominantColorRole;
   }[],
@@ -425,14 +470,22 @@ function buildColorTags(
   fingerprint: PhotoColorFingerprint,
   orientation: string,
 ): string[] {
-  const tags = [orientation];
+  const tags = [orientation, fingerprint.temperature, fingerprint.tonalKey];
 
+  if (fingerprint.saturationKey !== "balanced") {
+    tags.push(fingerprint.saturationKey);
+  }
+  if (fingerprint.monochromeScore > 0.72) tags.push("monochrome");
   if (fingerprint.brightness < 0.28) tags.push("low-key-shadow");
   if (fingerprint.brightness > 0.74) tags.push("soft-white");
-  if (fingerprint.saturation < 0.16) tags.push("muted-gray");
   if (fingerprint.warmth > 0.58) tags.push("warm-film");
   if (fingerprint.warmth < 0.42) tags.push("cool-blue");
   if (fingerprint.contrast > 0.24) tags.push("high-contrast");
+  if (fingerprint.meanChroma > 0.12) tags.push("color-rich");
+
+  const dominantHue = fingerprint.dominantColors[0]?.oklch.h;
+  const hueTag = dominantHue === null ? null : getHueFamilyTag(dominantHue);
+  if (hueTag) tags.push(hueTag);
 
   return Array.from(new Set(tags));
 }
@@ -458,13 +511,110 @@ function rgbStats(r: number, g: number, b: number) {
   return { brightness, saturation };
 }
 
+function getMonochromeScore(saturation: number, meanChroma: number) {
+  const saturationScore = 1 - Math.min(1, saturation / 0.22);
+  const chromaScore = 1 - Math.min(1, meanChroma / 0.08);
+  return Math.max(0, Math.min(1, (saturationScore + chromaScore) / 2));
+}
+
+function getTemperature(warmth: number) {
+  if (warmth >= 0.56) return "warm";
+  if (warmth <= 0.44) return "cool";
+  return "neutral";
+}
+
+function getTonalKey(brightness: number) {
+  if (brightness <= 0.33) return "low-key";
+  if (brightness >= 0.72) return "high-key";
+  return "mid-key";
+}
+
+function getSaturationKey(saturation: number, meanChroma: number) {
+  if (saturation <= 0.18 || meanChroma <= 0.035) return "muted";
+  if (saturation >= 0.48 || meanChroma >= 0.11) return "vibrant";
+  return "balanced";
+}
+
+function getHueFamilyTag(hue: number) {
+  if (hue < 18 || hue >= 345) return "red";
+  if (hue < 45) return "orange";
+  if (hue < 80) return "yellow";
+  if (hue < 165) return "green";
+  if (hue < 205) return "cyan";
+  if (hue < 265) return "blue";
+  if (hue < 315) return "purple";
+  return "pink";
+}
+
+function formatFNumber(value?: number): string | undefined {
+  return value ? `f/${Number(value.toFixed(1))}` : undefined;
+}
+
+function formatShutter(value?: number): string | undefined {
+  if (!value) return undefined;
+  return value >= 1
+    ? `${Number(value.toFixed(2))}s`
+    : `1/${Math.round(1 / value)}s`;
+}
+
+function formatFocalLength(value?: number): string | undefined {
+  return value ? `${Math.round(value)}mm` : undefined;
+}
+
+function parseExifDate(value: unknown): string | null {
+  if (!value) return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return stripTimezone(value.toISOString());
+  }
+
+  if (typeof value !== "string") return null;
+
+  const exifDate = value.match(
+    /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/,
+  );
+  if (exifDate) {
+    const [, year, month, day, hour, minute, second] = exifDate;
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : stripTimezone(parsed.toISOString());
+}
+
+function stripTimezone(isoString: string) {
+  return isoString.replace(/\.\d{3}Z$/, "");
+}
+
+function stringifyExifValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function toNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function toPositiveInteger(value: unknown) {
+  const number = toNumber(value);
+  return number && number > 0 ? Math.round(number) : undefined;
+}
+
+function quantizeChannel(value: number) {
+  return Math.round(value / RGB_BUCKET_SIZE) * RGB_BUCKET_SIZE;
+}
+
+function normalizeHue(value: number | undefined) {
+  if (value === undefined || Number.isNaN(value)) return null;
+  return roundMetric(((value % 360) + 360) % 360);
+}
+
+function clamp255(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
 function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b]
-    .map((channel) =>
-      Math.max(0, Math.min(255, Math.round(channel)))
-        .toString(16)
-        .padStart(2, "0"),
-    )
+    .map((channel) => clamp255(channel).toString(16).padStart(2, "0"))
     .join("")}`;
 }
 
@@ -472,22 +622,15 @@ function roundMetric(value: number) {
   return Number(value.toFixed(4));
 }
 
-function readAscii(view: DataView, offset: number, length: number) {
-  let output = "";
-  for (let i = 0; i < length && offset + i < view.byteLength; i += 1) {
-    output += String.fromCharCode(view.getUint8(offset + i));
-  }
-  return output;
-}
-
-function readUint16(view: DataView, offset: number, littleEndian: boolean) {
-  return offset + 2 <= view.byteLength
-    ? view.getUint16(offset, littleEndian)
-    : 0;
-}
-
-function readUint32(view: DataView, offset: number, littleEndian: boolean) {
-  return offset + 4 <= view.byteLength
-    ? view.getUint32(offset, littleEndian)
-    : 0;
-}
+type ExifPayload = {
+  Make?: unknown;
+  Model?: unknown;
+  LensModel?: unknown;
+  Lens?: unknown;
+  ISO?: unknown;
+  FNumber?: unknown;
+  ExposureTime?: unknown;
+  FocalLength?: unknown;
+  DateTimeOriginal?: unknown;
+  CreateDate?: unknown;
+};

@@ -50,12 +50,15 @@ export function ManageShell() {
     isDeletingBatch,
     isLoading,
     isMutating,
+    isRebuildingMood,
     isSelectAllChecked,
+    moodRebuildResult,
     nextPage,
     pageSize,
     paginatedPhotos,
     photos,
     previousPage,
+    rebuildMoodGroups,
     savePhotoGalleries,
     savePhotoUserTags,
     searchQuery,
@@ -172,21 +175,45 @@ export function ManageShell() {
           </div>
         </div>
 
-        <div className={panelClass}>
-          <p className="eyebrow">Defaults</p>
-          <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
-            User tag options
-          </h2>
-          <div className="mt-4 flex max-h-52 flex-wrap content-start gap-2 overflow-y-auto">
-            {userTags.length === 0 ? (
-              <span className="muted-chip">No user tags yet</span>
-            ) : (
-              userTags.map((tag) => (
-                <span className="tag-chip user-tag" key={tag}>
-                  {tag}
-                </span>
-              ))
+        <div className="grid gap-4">
+          <div className={panelClass}>
+            <p className="eyebrow">Mood</p>
+            <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
+              Color groups
+            </h2>
+            <button
+              type="button"
+              className="upload-button mt-4 w-full"
+              disabled={isRebuildingMood}
+              onClick={() => void rebuildMoodGroups()}
+            >
+              {isRebuildingMood ? "Rebuilding..." : "Rebuild mood groups"}
+            </button>
+            {moodRebuildResult && (
+              <p className="mt-3 text-sm font-semibold text-[#686258]">
+                v{moodRebuildResult.version}:{" "}
+                {moodRebuildResult.clustersCreated} groups,{" "}
+                {moodRebuildResult.assignmentsCreated} photos
+              </p>
             )}
+          </div>
+
+          <div className={panelClass}>
+            <p className="eyebrow">Defaults</p>
+            <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
+              User tag options
+            </h2>
+            <div className="mt-4 flex max-h-52 flex-wrap content-start gap-2 overflow-y-auto">
+              {userTags.length === 0 ? (
+                <span className="muted-chip">No user tags yet</span>
+              ) : (
+                userTags.map((tag) => (
+                  <span className="tag-chip user-tag" key={tag}>
+                    {tag}
+                  </span>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </section>
