@@ -26,6 +26,7 @@ const AUTO_RETRY = "false";
 const AUTH_PREFIX = "UploadTicket ";
 const MAX_CLOCK_SKEW_SECONDS = 30;
 const MAX_UPSTREAM_DIAGNOSTIC_BYTES = 16 * 1024;
+const IMGBED_UPLOAD_TIMEOUT_MS = 170_000;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -103,16 +104,46 @@ export default {
     }
 
     const uploadUrl = buildImgbedUploadUrl(env, payload.value);
-    const imgbedResponse = await fetch(uploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.IMGBED_TOKEN}`,
-        "Content-Type": contentType,
-      },
-      body: request.body,
-    });
-
     const requestId = crypto.randomUUID();
+    let imgbedResponse: Response;
+    try {
+      imgbedResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.IMGBED_TOKEN}`,
+          "Content-Type": contentType,
+        },
+        body: request.body,
+        signal: AbortSignal.any([
+          request.signal,
+          AbortSignal.timeout(IMGBED_UPLOAD_TIMEOUT_MS),
+        ]),
+      });
+    } catch (error) {
+      const timedOut =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      console.warn(
+        JSON.stringify({
+          event: "imgbed_upload_transport_failure",
+          requestId,
+          timedOut,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return json(
+        {
+          error: timedOut
+            ? "Imgbed upload timed out"
+            : "Imgbed upload transport failed",
+          requestId,
+          retryable: true,
+        },
+        timedOut ? 504 : 502,
+        cors,
+      );
+    }
+
     const imgbedPayload = await readUpstreamPayload(imgbedResponse);
     const src = parseImgbedSrc(imgbedPayload.json);
     if (!imgbedResponse.ok || !src) {

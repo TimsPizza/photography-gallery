@@ -21,6 +21,7 @@ type FluidGlassProps = {
   cubeProps?: ModeProps;
   children?: ReactNode;
   className?: string;
+  contentClassName?: string;
   interactive?: boolean;
 };
 
@@ -31,14 +32,18 @@ export default function FluidGlass({
   cubeProps = {},
   children,
   className = "",
+  contentClassName = "",
   interactive = false,
 }: FluidGlassProps) {
   const modeProps =
     mode === "bar" ? barProps : mode === "cube" ? cubeProps : lensProps;
 
   return (
-    <div className={`fluid-glass-wrap ${className}`}>
-      <div className="fluid-glass-canvas" aria-hidden="true">
+    <div className={`relative overflow-hidden ${className}`}>
+      <div
+        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]"
+        aria-hidden="true"
+      >
         <Canvas
           camera={{ position: [0, 0, 20], fov: 15 }}
           dpr={[1, 1.5]}
@@ -51,7 +56,9 @@ export default function FluidGlass({
           />
         </Canvas>
       </div>
-      {children && <div className="fluid-glass-content">{children}</div>}
+      {children && (
+        <div className={`relative z-[1] ${contentClassName}`}>{children}</div>
+      )}
     </div>
   );
 }

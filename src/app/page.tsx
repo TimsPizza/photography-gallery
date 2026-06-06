@@ -9,7 +9,7 @@ export default async function Home() {
 
   return (
     <SmoothScroll>
-      <GalleryShell initialPhotos={photos} />
+      <GalleryShell initialPhotos={photos} initialWallVariant="masonry" />
     </SmoothScroll>
   );
 }

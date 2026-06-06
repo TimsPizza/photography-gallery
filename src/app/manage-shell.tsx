@@ -1,34 +1,20 @@
 "use client";
 
 import { UploadConsole } from "@/app/upload-console";
+import {
+  Button,
+  Checkbox,
+  Chip,
+  EmptyState,
+  Eyebrow,
+  FieldLabel,
+  Input,
+  Panel,
+  Select,
+} from "@/components/ui";
 import { useManagePhotosController } from "@/controllers/use-manage-photos-controller";
 import { getPhotoThumbnailUrl } from "@/lib/photo-url";
-import * as Checkbox from "@radix-ui/react-checkbox";
 import { useState } from "react";
-
-const CheckIcon = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 15 15"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path
-      d="M11.4669 3.72684C11.7558 3.91574 11.8369 4.30308 11.648 4.59198L7.39799 11.092C7.29783 11.2452 7.13556 11.3467 6.95402 11.3699C6.77247 11.3931 6.58989 11.3355 6.45446 11.2124L3.70446 8.71241C3.44905 8.48022 3.43023 8.08494 3.66242 7.82953C3.89461 7.57412 4.28989 7.55529 4.5453 7.78749L6.75292 9.79441L10.6018 3.90792C10.7907 3.61902 11.178 3.53795 11.4669 3.72684Z"
-      fill="currentColor"
-      fillRule="evenodd"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
-const panelClass =
-  "rounded-lg border border-white/70 bg-white/55 p-4 shadow-[0_18px_55px_rgb(68_54_29_/_11%)] backdrop-blur-xl";
-const inputClass =
-  "min-h-10 rounded-md border border-black/10 bg-white/75 px-3 text-sm text-[#211f1b] outline-none focus:border-[#a6752a]";
-const lightButtonClass =
-  "min-h-10 rounded-md border border-black/10 bg-white/75 px-3 text-sm font-bold text-[#3a342a] disabled:cursor-not-allowed disabled:opacity-50";
 
 export function ManageShell() {
   const [newGalleryTitle, setNewGalleryTitle] = useState("");
@@ -93,11 +79,13 @@ export function ManageShell() {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen w-[min(1280px,calc(100%-2rem))] content-start gap-6 py-8">
-      <section className="manage-header">
-        <p className="eyebrow">Manage</p>
-        <h1>Photo intake</h1>
-        <p>
+    <main className="mx-auto grid min-h-screen w-[min(1280px,calc(100%-2rem))] content-start gap-6 bg-[radial-gradient(circle_at_12%_8%,rgb(255_231_177_/_25%),transparent_35rem),linear-gradient(135deg,#f6f2e8_0%,#e7e4dc_55%,#d8d5ce_100%)] bg-fixed py-8 dark:bg-[radial-gradient(circle_at_12%_8%,rgb(255_231_177_/_5%),transparent_35rem),linear-gradient(135deg,#12100d_0%,#1a1714_55%,#161310_100%)]">
+      <section className="grid gap-3">
+        <Eyebrow>Manage</Eyebrow>
+        <h1 className="text-[clamp(2.4rem,7vw,5rem)] leading-[0.96] font-[720]">
+          Photo intake
+        </h1>
+        <p className="max-w-2xl leading-[1.7] text-[#686258] dark:text-[#9c9586]">
           Upload, classify, and place photos into galleries before they appear
           in the public wall.
         </p>
@@ -106,10 +94,10 @@ export function ManageShell() {
       <UploadConsole onStored={handleStored} />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]">
-        <div className={panelClass}>
+        <Panel>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="eyebrow">Gallery</p>
+              <Eyebrow>Gallery</Eyebrow>
               <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
                 Gallery management
               </h2>
@@ -120,30 +108,27 @@ export function ManageShell() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
-            <input
-              className={inputClass}
+            <Input
               type="text"
               placeholder="Gallery title"
               value={newGalleryTitle}
               onChange={(event) => setNewGalleryTitle(event.target.value)}
             />
-            <input
-              className={inputClass}
+            <Input
               type="text"
               placeholder="url_slug"
               value={newGalleryUrlSlug}
               onChange={(event) => setNewGalleryUrlSlug(event.target.value)}
             />
-            <button
-              type="button"
-              className="upload-button"
+            <Button
+              variant="primary"
               disabled={isMutating || !newGalleryTitle.trim()}
               onClick={() => void handleCreateGallery()}
             >
               Create
-            </button>
-            <input
-              className={`${inputClass} md:col-span-3`}
+            </Button>
+            <Input
+              className="md:col-span-3"
               type="text"
               placeholder="Description"
               value={newGalleryDescription}
@@ -153,7 +138,7 @@ export function ManageShell() {
 
           <div className="mt-4 grid max-h-44 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
             {galleries.length === 0 ? (
-              <span className="muted-chip">No galleries yet</span>
+              <Chip>No galleries yet</Chip>
             ) : (
               galleries.map((gallery) => (
                 <article
@@ -166,29 +151,29 @@ export function ManageShell() {
                   <p className="mt-1 truncate text-xs text-[#686258]">
                     {gallery.urlSlug ?? "no url_slug"}
                   </p>
-                  <span className="mt-3 inline-flex rounded-full bg-black/5 px-2 py-1 text-xs font-bold text-[#686258]">
+                  <Chip className="mt-3 px-2 text-xs" variant="count">
                     {gallery.photoCount ?? 0} photos
-                  </span>
+                  </Chip>
                 </article>
               ))
             )}
           </div>
-        </div>
+        </Panel>
 
         <div className="grid gap-4">
-          <div className={panelClass}>
-            <p className="eyebrow">Mood</p>
+          <Panel>
+            <Eyebrow>Mood</Eyebrow>
             <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
               Color groups
             </h2>
-            <button
-              type="button"
-              className="upload-button mt-4 w-full"
+            <Button
+              className="mt-4 w-full"
+              variant="primary"
               disabled={isRebuildingMood}
               onClick={() => void rebuildMoodGroups()}
             >
               {isRebuildingMood ? "Rebuilding..." : "Rebuild mood groups"}
-            </button>
+            </Button>
             {moodRebuildResult && (
               <p className="mt-3 text-sm font-semibold text-[#686258]">
                 v{moodRebuildResult.version}:{" "}
@@ -196,85 +181,82 @@ export function ManageShell() {
                 {moodRebuildResult.assignmentsCreated} photos
               </p>
             )}
-          </div>
+          </Panel>
 
-          <div className={panelClass}>
-            <p className="eyebrow">Defaults</p>
+          <Panel>
+            <Eyebrow>Defaults</Eyebrow>
             <h2 className="mt-1 text-xl font-bold text-[#211f1b]">
               User tag options
             </h2>
             <div className="mt-4 flex max-h-52 flex-wrap content-start gap-2 overflow-y-auto">
               {userTags.length === 0 ? (
-                <span className="muted-chip">No user tags yet</span>
+                <Chip>No user tags yet</Chip>
               ) : (
                 userTags.map((tag) => (
-                  <span className="tag-chip user-tag" key={tag}>
+                  <Chip variant="user" key={tag}>
                     {tag}
-                  </span>
+                  </Chip>
                 ))
               )}
             </div>
-          </div>
+          </Panel>
         </div>
       </section>
 
-      <section className={panelClass}>
+      <Panel as="section">
         <div className="grid gap-4">
           <header className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
             <div>
               <div className="flex flex-wrap items-center gap-3">
-                <p className="eyebrow">Files</p>
-                {isLoading && <span className="loading-tag">Loading...</span>}
+                <Eyebrow>Files</Eyebrow>
+                {isLoading && (
+                  <span className="rounded-sm bg-black/5 px-2 py-[0.2rem] text-[0.8rem] text-[#686258] dark:text-[#9c9586]">
+                    Loading...
+                  </span>
+                )}
               </div>
               <h2 className="mt-1 text-2xl font-bold text-[#211f1b]">
                 All files
               </h2>
               <p className="mt-1 text-sm text-[#686258]">
-                Showing {filteredCount} of {photos.length}; page {currentPage} of{" "}
-                {totalPages}.
+                Showing {filteredCount} of {photos.length}; page {currentPage}{" "}
+                of {totalPages}.
               </p>
             </div>
 
             {photos.length > 0 && (
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2 text-sm font-bold text-[#3a342a]">
-                  <Checkbox.Root
-                    className="CheckboxRoot"
+                  <Checkbox
                     checked={isSelectAllChecked}
                     onCheckedChange={(checked) =>
                       toggleSelectAll(checked === true)
                     }
-                  >
-                    <Checkbox.Indicator className="CheckboxIndicator">
-                      <CheckIcon />
-                    </Checkbox.Indicator>
-                  </Checkbox.Root>
+                  />
                   Select all
                 </label>
-                <button
-                  type="button"
-                  className="delete-button !m-0 !w-auto px-4"
+                <Button
+                  className="px-4"
+                  variant="danger"
                   disabled={selectedCount === 0 || isDeletingBatch}
                   onClick={deleteSelectedPhotos}
                 >
                   {isDeletingBatch
                     ? "Deleting..."
                     : `Delete (${selectedCount})`}
-                </button>
+                </Button>
               </div>
             )}
           </header>
 
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.5fr)_minmax(180px,0.5fr)_auto]">
-            <input
-              className={inputClass}
+            <Input
               type="search"
               placeholder="Search filename, fileId, tag, gallery"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
-            <select
-              className={inputClass}
+            <Select
               value={tagFilter}
               onChange={(event) => setTagFilter(event.target.value)}
             >
@@ -284,9 +266,8 @@ export function ManageShell() {
                   {tag}
                 </option>
               ))}
-            </select>
-            <select
-              className={inputClass}
+            </Select>
+            <Select
               value={galleryFilter}
               onChange={(event) => setGalleryFilter(event.target.value)}
             >
@@ -296,10 +277,8 @@ export function ManageShell() {
                   {gallery.title}
                 </option>
               ))}
-            </select>
-            <button
-              type="button"
-              className={lightButtonClass}
+            </Select>
+            <Button
               onClick={() => {
                 setSearchQuery("");
                 setTagFilter("");
@@ -307,40 +286,35 @@ export function ManageShell() {
               }}
             >
               Reset
-            </button>
+            </Button>
           </div>
 
           {selectedCount > 0 && (
             <div className="grid gap-3 rounded-lg border border-black/10 bg-white/60 p-3 lg:grid-cols-2">
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                <input
-                  className={inputClass}
+                <Input
                   list="user-tag-options"
                   type="text"
                   placeholder="comma-separated user tags"
                   value={batchTagInput}
                   onChange={(event) => setBatchTagInput(event.target.value)}
                 />
-                <button
-                  type="button"
-                  className={lightButtonClass}
+                <Button
                   disabled={isMutating || !batchTagInput.trim()}
                   onClick={() => void updateSelectedTags("add")}
                 >
                   Add
-                </button>
-                <button
-                  type="button"
-                  className={lightButtonClass}
+                </Button>
+                <Button
                   disabled={isMutating || !batchTagInput.trim()}
                   onClick={() => void updateSelectedTags("remove")}
                 >
                   Remove
-                </button>
+                </Button>
               </div>
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                <select
-                  className={`${inputClass} h-10`}
+                <Select
+                  className="h-10"
                   multiple
                   value={batchGalleryIds}
                   onChange={(event) =>
@@ -356,23 +330,19 @@ export function ManageShell() {
                       {gallery.title}
                     </option>
                   ))}
-                </select>
-                <button
-                  type="button"
-                  className={lightButtonClass}
+                </Select>
+                <Button
                   disabled={isMutating || batchGalleryIds.length === 0}
                   onClick={() => void updateSelectedGalleries("add")}
                 >
                   Add
-                </button>
-                <button
-                  type="button"
-                  className={lightButtonClass}
+                </Button>
+                <Button
                   disabled={isMutating || batchGalleryIds.length === 0}
                   onClick={() => void updateSelectedGalleries("remove")}
                 >
                   Remove
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -389,18 +359,14 @@ export function ManageShell() {
                 key={photo.fileId}
                 className="relative grid h-[34rem] overflow-hidden rounded-lg border border-black/10 bg-white/70"
               >
-                <div className="absolute left-3 top-3 z-10">
-                  <Checkbox.Root
-                    className="CheckboxRoot item-checkbox"
+                <div className="absolute top-3 left-3 z-10">
+                  <Checkbox
+                    className="border-[#ccc] shadow-[0_2px_8px_rgb(0_0_0_/_15%)]"
                     checked={selectedIds.has(photo.fileId)}
                     onCheckedChange={(checked) =>
                       toggleSelect(photo.fileId, checked === true)
                     }
-                  >
-                    <Checkbox.Indicator className="CheckboxIndicator">
-                      <CheckIcon />
-                    </Checkbox.Indicator>
-                  </Checkbox.Root>
+                  />
                 </div>
 
                 <div className="h-44 overflow-hidden bg-black/5">
@@ -417,26 +383,25 @@ export function ManageShell() {
                     <strong className="block truncate text-sm text-[#211f1b]">
                       {photo.originalFileName}
                     </strong>
-                    <span className="mt-1 block break-all text-xs text-[#686258]">
+                    <span className="mt-1 block text-xs break-all text-[#686258]">
                       {photo.fileId}
                     </span>
                   </div>
 
-                  <div className="photo-tags">
+                  <div className="flex flex-wrap gap-[0.4rem]">
                     {photo.tags.map((tag) => (
-                      <span
-                        className={`tag-chip ${tag.kind === "color" ? "color-tag" : "user-tag"}`}
+                      <Chip
+                        variant={tag.kind === "color" ? "color" : "user"}
                         key={`${tag.kind}:${tag.name}`}
                       >
                         {tag.name}
-                      </span>
+                      </Chip>
                     ))}
                   </div>
 
-                  <label className="grid gap-1 text-xs font-bold text-[#686258]">
+                  <FieldLabel>
                     User tags
-                    <input
-                      className={inputClass}
+                    <Input
                       list="user-tag-options"
                       type="text"
                       value={tagDrafts[photo.fileId] ?? ""}
@@ -444,20 +409,18 @@ export function ManageShell() {
                         setPhotoTagDraft(photo.fileId, event.target.value)
                       }
                     />
-                  </label>
-                  <button
-                    type="button"
-                    className={lightButtonClass}
+                  </FieldLabel>
+                  <Button
                     disabled={isMutating}
                     onClick={() => void savePhotoUserTags(photo.fileId)}
                   >
                     Save tags
-                  </button>
+                  </Button>
 
-                  <label className="grid gap-1 text-xs font-bold text-[#686258]">
+                  <FieldLabel>
                     Added to gallery
-                    <select
-                      className={`${inputClass} h-24`}
+                    <Select
+                      className="h-24"
                       multiple
                       value={galleryDrafts[photo.fileId] ?? []}
                       onChange={(event) =>
@@ -474,32 +437,30 @@ export function ManageShell() {
                           {gallery.title}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className={lightButtonClass}
+                    </Select>
+                  </FieldLabel>
+                  <Button
                     disabled={isMutating}
                     onClick={() => void savePhotoGalleries(photo.fileId)}
                   >
                     Save galleries
-                  </button>
+                  </Button>
 
-                  <button
-                    type="button"
-                    className="delete-button"
+                  <Button
+                    className="mt-2 w-full"
+                    variant="danger"
                     disabled={deletingId === photo.fileId || isDeletingBatch}
                     onClick={() => void deletePhoto(photo.fileId)}
                   >
                     {deletingId === photo.fileId ? "Deleting..." : "Delete"}
-                  </button>
+                  </Button>
                 </div>
               </article>
             ))}
             {!isLoading && filteredCount === 0 && (
-              <p className="empty-state sm:col-span-2 xl:col-span-3 2xl:col-span-4">
+              <EmptyState className="sm:col-span-2 xl:col-span-3 2xl:col-span-4">
                 No photos match the current filters.
-              </p>
+              </EmptyState>
             )}
           </div>
 
@@ -508,29 +469,19 @@ export function ManageShell() {
               {pageSize} per page
             </span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className={lightButtonClass}
-                disabled={currentPage <= 1}
-                onClick={previousPage}
-              >
+              <Button disabled={currentPage <= 1} onClick={previousPage}>
                 Previous
-              </button>
+              </Button>
               <span className="rounded-md bg-black/5 px-3 py-2 text-sm font-bold text-[#3a342a]">
                 {currentPage} / {totalPages}
               </span>
-              <button
-                type="button"
-                className={lightButtonClass}
-                disabled={currentPage >= totalPages}
-                onClick={nextPage}
-              >
+              <Button disabled={currentPage >= totalPages} onClick={nextPage}>
                 Next
-              </button>
+              </Button>
             </div>
           </footer>
         </div>
-      </section>
+      </Panel>
     </main>
   );
 }

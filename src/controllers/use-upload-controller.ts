@@ -3,6 +3,8 @@
 import {
   photoUploadResponseSchema,
   StoredPhotoMetadata,
+  type UploadTicketRequest,
+  type UploadTicketResponse,
   uploadTicketResponseSchema,
   workerUploadResultSchema,
 } from "@/contracts/photo";
@@ -23,6 +25,9 @@ const ASSUMED_TELEGRAM_CHUNK_BYTES = 1024 * 1024;
 const MAX_WORKER_UPLOAD_ATTEMPTS = 5;
 const RETRY_BASE_DELAY_MS = 15_000;
 const RETRY_MAX_DELAY_MS = 120_000;
+const API_TIMEOUT_MS = 20_000;
+const COMMIT_TIMEOUT_MS = 30_000;
+const WORKER_UPLOAD_TIMEOUT_MS = 180_000;
 
 type UploadRateLimiter = {
   cooldownUntil: number;
@@ -39,6 +44,7 @@ export function useUploadController({
     tokens: TELEGRAM_BUCKET_CAPACITY,
     updatedAt: 0,
   });
+  const uploadBudgetQueueRef = useRef<Promise<void>>(Promise.resolve());
   const clearItems = useUploadQueueStore((state) => state.clearItems);
   const hasHydrated = useUploadQueueStore((state) => state.hasHydrated);
   const items = useUploadQueueStore((state) => state.items);
@@ -101,63 +107,38 @@ export function useUploadController({
   async function processFile(file: File, itemId: string) {
     updateItem(itemId, {
       status: "analyzing",
+      attempt: 1,
+      progress: undefined,
       message: "Reading EXIF and color fingerprint",
     });
 
     try {
       const metadata = await analyzePhotoFile(file);
 
-      updateItem(itemId, {
-        status: "uploading",
-        message: "Requesting upload ticket",
-      });
-
-      const ticketResponse = await fetch("/api/photos/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          intent: "original",
-          metadata,
-          fileSize: file.size,
-        }),
-      });
-      const ticketJson = await ticketResponse.json();
-      const ticket = uploadTicketResponseSchema.safeParse(ticketJson);
-
-      if (!ticketResponse.ok || !ticket.success) {
-        throw new Error(getUploadError(ticketJson, ticketResponse.status));
-      }
-
-      updateItem(itemId, {
-        status: "uploading",
-        message: `${metadata.width}x${metadata.height} · uploading original to Worker`,
-      });
-
-      const originalFormData = new FormData();
-      originalFormData.set("file", file, file.name);
-
-      const { json: workerJson, response: workerResponse } =
+      const { json: workerJson, status: workerStatus } =
         await uploadToWorkerWithRetry({
           file,
-          formData: originalFormData,
+          getTicket: () =>
+            requestUploadTicket({
+              intent: "original",
+              metadata,
+              fileSize: file.size,
+            }),
           itemId,
           phase: "original",
-          ticket: ticket.data.ticket,
           reportRateLimitPenalty,
           updateItem,
-          uploadUrl: ticket.data.uploadUrl,
           waitForUploadBudget,
         });
       const upload = workerUploadResultSchema.safeParse(workerJson);
 
-      if (!workerResponse.ok || !upload.success) {
-        throw new Error(getUploadError(workerJson, workerResponse.status));
+      if (workerStatus < 200 || workerStatus >= 300 || !upload.success) {
+        throw new Error(getUploadError(workerJson, workerStatus));
       }
 
       updateItem(itemId, {
         status: "analyzing",
+        progress: undefined,
         message: "Transcoding thumbnail to WebP",
       });
 
@@ -166,75 +147,49 @@ export function useUploadController({
         getPhotoThumbnailFileName(upload.data.finalFileName),
       );
 
-      updateItem(itemId, {
-        status: "uploading",
-        message: "Requesting thumbnail upload ticket",
-      });
-
-      const thumbnailTicketResponse = await fetch("/api/photos/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          intent: "thumbnail",
-          originalFileId: upload.data.fileId,
-          thumbnailFileName: webpFile.name,
-          fileSize: webpFile.size,
-        }),
-      });
-      const thumbnailTicketJson = await thumbnailTicketResponse.json();
-      const thumbnailTicket =
-        uploadTicketResponseSchema.safeParse(thumbnailTicketJson);
-
-      if (!thumbnailTicketResponse.ok || !thumbnailTicket.success) {
-        throw new Error(
-          getUploadError(thumbnailTicketJson, thumbnailTicketResponse.status),
-        );
-      }
-
-      updateItem(itemId, {
-        status: "uploading",
-        message: "uploading thumbnail to Worker",
-      });
-
-      const thumbFormData = new FormData();
-      thumbFormData.set("file", webpFile, webpFile.name);
-
-      const { json: thumbJson, response: thumbResponse } =
+      const { json: thumbJson, status: thumbStatus } =
         await uploadToWorkerWithRetry({
           file: webpFile,
-          formData: thumbFormData,
+          getTicket: () =>
+            requestUploadTicket({
+              intent: "thumbnail",
+              originalFileId: upload.data.fileId,
+              thumbnailFileName: webpFile.name,
+              fileSize: webpFile.size,
+            }),
           itemId,
           phase: "thumbnail",
-          ticket: thumbnailTicket.data.ticket,
           reportRateLimitPenalty,
           updateItem,
-          uploadUrl: thumbnailTicket.data.uploadUrl,
           waitForUploadBudget,
         });
       const thumbnailUpload = workerUploadResultSchema.safeParse(thumbJson);
 
-      if (!thumbResponse.ok || !thumbnailUpload.success) {
-        throw new Error(getUploadError(thumbJson, thumbResponse.status));
+      if (thumbStatus < 200 || thumbStatus >= 300 || !thumbnailUpload.success) {
+        throw new Error(getUploadError(thumbJson, thumbStatus));
       }
 
       updateItem(itemId, {
-        status: "uploading",
+        status: "processing",
+        progress: 100,
         message: "Committing metadata",
       });
 
-      const commitResponse = await fetch("/api/photos/upload/commit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const commitResponse = await fetchWithTimeout(
+        "/api/photos/upload/commit",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            metadata,
+            thumbnailUpload: thumbnailUpload.data,
+            upload: upload.data,
+          }),
         },
-        body: JSON.stringify({
-          metadata,
-          thumbnailUpload: thumbnailUpload.data,
-          upload: upload.data,
-        }),
-      });
+        COMMIT_TIMEOUT_MS,
+      );
       const commitJson = await commitResponse.json();
       const payload = photoUploadResponseSchema.safeParse(commitJson);
 
@@ -244,6 +199,7 @@ export function useUploadController({
 
       updateItem(itemId, {
         status: "stored",
+        progress: 100,
         message:
           payload.data.photo.originalFileName ===
           payload.data.photo.finalFileName
@@ -255,6 +211,7 @@ export function useUploadController({
     } catch (error) {
       updateItem(itemId, {
         status: "failed",
+        progress: undefined,
         message: error instanceof Error ? error.message : "Unknown failure",
       });
     }
@@ -264,14 +221,31 @@ export function useUploadController({
     storeUpdateItem(itemId, patch);
   }
 
-  async function waitForUploadBudget(file: File) {
+  function waitForUploadBudget(
+    file: File,
+    itemId: string,
+    phase: "original" | "thumbnail",
+  ) {
     const messageCost = estimateTelegramMessageCost(file);
+    const reservation = uploadBudgetQueueRef.current.then(async () => {
+      while (true) {
+        const waitMs = reserveUploadBudget(
+          rateLimiterRef.current,
+          messageCost,
+        );
+        if (waitMs === 0) return;
+        await sleepWithCountdown(waitMs, (remainingMs) => {
+          updateItem(itemId, {
+            status: "waiting",
+            progress: 0,
+            message: `Waiting ${formatDelay(remainingMs)} for upload budget before ${phase}`,
+          });
+        });
+      }
+    });
 
-    while (true) {
-      const waitMs = reserveUploadBudget(rateLimiterRef.current, messageCost);
-      if (waitMs === 0) return;
-      await sleep(waitMs);
-    }
+    uploadBudgetQueueRef.current = reservation.catch(() => {});
+    return reservation;
   }
 
   function reportRateLimitPenalty(delayMs: number) {
@@ -295,70 +269,230 @@ export function useUploadController({
 
 type WorkerUploadAttempt = {
   file: File;
-  formData: FormData;
+  getTicket: () => Promise<UploadTicketResponse>;
   itemId: string;
   phase: "original" | "thumbnail";
   reportRateLimitPenalty: (delayMs: number) => void;
-  ticket: string;
   updateItem: (itemId: string, patch: Partial<UploadState>) => void;
-  uploadUrl: string;
-  waitForUploadBudget: (file: File) => Promise<void>;
+  waitForUploadBudget: (
+    file: File,
+    itemId: string,
+    phase: "original" | "thumbnail",
+  ) => Promise<void>;
 };
 
 async function uploadToWorkerWithRetry({
   file,
-  formData,
+  getTicket,
   itemId,
   phase,
   reportRateLimitPenalty,
-  ticket,
   updateItem,
-  uploadUrl,
   waitForUploadBudget,
 }: WorkerUploadAttempt) {
-  let lastFailure: { json: unknown; response: Response } | null = null;
+  let lastFailure: { json: unknown; status: number } | null = null;
 
   for (let attempt = 1; attempt <= MAX_WORKER_UPLOAD_ATTEMPTS; attempt += 1) {
-    await waitForUploadBudget(file);
+    try {
+      await waitForUploadBudget(file, itemId, phase);
 
-    updateItem(itemId, {
-      status: "uploading",
-      message: `Uploading ${phase} to Worker${attempt > 1 ? ` · retry ${attempt}/${MAX_WORKER_UPLOAD_ATTEMPTS}` : ""}`,
-    });
+      updateItem(itemId, {
+        status: attempt > 1 ? "retrying" : "uploading",
+        attempt,
+        progress: 0,
+        message: `Requesting fresh ${phase} upload ticket`,
+      });
+      const ticket = await getTicket();
 
-    const response = await fetch(uploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `UploadTicket ${ticket}`,
-      },
-      body: formData,
-    });
-    const json = await response.json().catch(() => ({}));
+      const result = await uploadFileToWorker({
+        file,
+        itemId,
+        phase,
+        ticket,
+        updateItem,
+      });
 
-    if (response.ok) {
-      return { json, response };
+      if (result.status >= 200 && result.status < 300) {
+        return result;
+      }
+
+      lastFailure = result;
+      if (
+        attempt >= MAX_WORKER_UPLOAD_ATTEMPTS ||
+        !isRetryableUploadFailure(result.json, result.status)
+      ) {
+        return result;
+      }
+
+      const delayMs = getRetryDelayMs(attempt);
+      if (isRateLimitUploadFailure(result.json, result.status)) {
+        reportRateLimitPenalty(delayMs);
+      }
+      await waitBeforeRetry({
+        attempt,
+        delayMs,
+        itemId,
+        phase,
+        updateItem,
+      });
+    } catch (error) {
+      if (attempt >= MAX_WORKER_UPLOAD_ATTEMPTS) {
+        throw error;
+      }
+
+      const delayMs = getRetryDelayMs(attempt);
+      await waitBeforeRetry({
+        attempt,
+        delayMs,
+        itemId,
+        phase,
+        updateItem,
+        reason:
+          error instanceof UploadTransportError && error.bytesSent > 0
+            ? "connection timed out after bytes were sent; remote outcome is unknown"
+            : error instanceof Error
+              ? error.message
+              : "network failure",
+      });
     }
-
-    lastFailure = { json, response };
-    if (
-      attempt >= MAX_WORKER_UPLOAD_ATTEMPTS ||
-      !isRetryableUploadFailure(json, response.status)
-    ) {
-      return lastFailure;
-    }
-
-    const delayMs = getRetryDelayMs(attempt);
-    if (isRateLimitUploadFailure(json, response.status)) {
-      reportRateLimitPenalty(delayMs);
-    }
-    updateItem(itemId, {
-      status: "uploading",
-      message: `${phase} upload rate limited or temporarily failed; retrying in ${formatDelay(delayMs)}`,
-    });
-    await sleep(delayMs);
   }
 
   return lastFailure!;
+}
+
+async function requestUploadTicket(
+  request: UploadTicketRequest,
+): Promise<UploadTicketResponse> {
+  const response = await fetchWithTimeout(
+    "/api/photos/upload",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+    API_TIMEOUT_MS,
+  );
+  const json = await response.json().catch(() => ({}));
+  const ticket = uploadTicketResponseSchema.safeParse(json);
+
+  if (!response.ok || !ticket.success) {
+    throw new Error(getUploadError(json, response.status));
+  }
+
+  return ticket.data;
+}
+
+function uploadFileToWorker({
+  file,
+  itemId,
+  phase,
+  ticket,
+  updateItem,
+}: {
+  file: File;
+  itemId: string;
+  phase: "original" | "thumbnail";
+  ticket: UploadTicketResponse;
+  updateItem: (itemId: string, patch: Partial<UploadState>) => void;
+}) {
+  return new Promise<{ json: unknown; status: number }>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const formData = new FormData();
+    let bytesSent = 0;
+
+    formData.set("file", file, file.name);
+    request.open("POST", ticket.uploadUrl);
+    request.timeout = WORKER_UPLOAD_TIMEOUT_MS;
+    request.setRequestHeader("Authorization", `UploadTicket ${ticket.ticket}`);
+
+    request.upload.onprogress = (event) => {
+      bytesSent = event.loaded;
+      if (!event.lengthComputable || event.total <= 0) return;
+
+      const progress = Math.min(
+        100,
+        Math.round((event.loaded / event.total) * 100),
+      );
+      updateItem(itemId, {
+        status: progress >= 100 ? "processing" : "uploading",
+        progress,
+        message:
+          progress >= 100
+            ? `${phase} bytes sent; Worker is waiting for file backend`
+            : `Sending ${phase} to Worker · ${progress}%`,
+      });
+    };
+
+    request.onload = () => {
+      resolve({
+        json: parseJsonOrEmpty(request.responseText),
+        status: request.status,
+      });
+    };
+    request.onerror = () => {
+      reject(
+        new UploadTransportError(
+          `Network error while uploading ${phase}`,
+          bytesSent,
+        ),
+      );
+    };
+    request.ontimeout = () => {
+      reject(
+        new UploadTransportError(
+          `${phase} upload timed out after ${formatDelay(WORKER_UPLOAD_TIMEOUT_MS)}`,
+          bytesSent,
+        ),
+      );
+    };
+    request.onabort = () => {
+      reject(new UploadTransportError(`${phase} upload was aborted`, bytesSent));
+    };
+
+    updateItem(itemId, {
+      status: "uploading",
+      progress: 0,
+      message: `Starting ${phase} upload to Worker`,
+    });
+    request.send(formData);
+  });
+}
+
+async function waitBeforeRetry({
+  attempt,
+  delayMs,
+  itemId,
+  phase,
+  reason = "rate limited or temporarily failed",
+  updateItem,
+}: {
+  attempt: number;
+  delayMs: number;
+  itemId: string;
+  phase: "original" | "thumbnail";
+  reason?: string;
+  updateItem: (itemId: string, patch: Partial<UploadState>) => void;
+}) {
+  await sleepWithCountdown(delayMs, (remainingMs) => {
+    updateItem(itemId, {
+      status: "retrying",
+      attempt: attempt + 1,
+      progress: 0,
+      message: `${phase} ${reason}; retry ${attempt + 1}/${MAX_WORKER_UPLOAD_ATTEMPTS} in ${formatDelay(remainingMs)}`,
+    });
+  });
+}
+
+class UploadTransportError extends Error {
+  constructor(
+    message: string,
+    readonly bytesSent: number,
+  ) {
+    super(message);
+    this.name = "UploadTransportError";
+  }
 }
 
 function estimateTelegramMessageCost(file: File) {
@@ -414,7 +548,6 @@ function reserveUploadBudget(limiter: UploadRateLimiter, messageCost: number) {
   }
 
   const missingTokens = messageCost - next.tokens;
-  next.tokens = 0;
   next.updatedAt = now;
   return Math.ceil(missingTokens / TELEGRAM_TOKEN_REFILL_PER_MS);
 }
@@ -451,6 +584,51 @@ function sleep(delayMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
+async function sleepWithCountdown(
+  delayMs: number,
+  onTick: (remainingMs: number) => void,
+) {
+  const deadline = Date.now() + delayMs;
+
+  while (true) {
+    const remainingMs = Math.max(0, deadline - Date.now());
+    onTick(remainingMs);
+    if (remainingMs === 0) return;
+    await sleep(Math.min(1_000, remainingMs));
+  }
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Request timed out after ${formatDelay(timeoutMs)}`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function parseJsonOrEmpty(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return {};
+  }
+}
+
 function getUploadError(json: unknown, status: number) {
   if (
     json &&
@@ -467,18 +645,20 @@ function getUploadError(json: unknown, status: number) {
 
 function getUploadErrorDetails(json: object) {
   const upstream = getUpstreamRecord(json);
-  if (!upstream) {
-    return null;
-  }
-
+  const requestId =
+    "requestId" in json && typeof json.requestId === "string"
+      ? `request ${json.requestId}`
+      : null;
   const status =
-    typeof upstream.status === "number" ? `upstream ${upstream.status}` : null;
+    typeof upstream?.status === "number"
+      ? `upstream ${upstream.status}`
+      : null;
   const bodyText =
-    typeof upstream.bodyText === "string" && upstream.bodyText.length > 0
+    typeof upstream?.bodyText === "string" && upstream.bodyText.length > 0
       ? upstream.bodyText.slice(0, 240)
       : null;
 
-  return [status, bodyText].filter(Boolean).join(": ");
+  return [requestId, status, bodyText].filter(Boolean).join(": ");
 }
 
 function getUpstreamRecord(json: unknown) {

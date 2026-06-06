@@ -22,7 +22,7 @@ export default function Stack({ cards, randomRotation = true }: StackProps) {
 
   return (
     <motion.div
-      className="stack-root"
+      className="relative aspect-square w-full [perspective:700px]"
       initial="rest"
       whileHover="hover"
       animate="rest"
@@ -32,7 +32,7 @@ export default function Stack({ cards, randomRotation = true }: StackProps) {
 
         return (
           <motion.div
-            className="stack-card"
+            className="absolute inset-0 overflow-hidden rounded-lg border border-white/15 bg-white/10 shadow-[0_20px_60px_rgb(0_0_0_/_28%)]"
             key={index}
             variants={{
               rest: {
